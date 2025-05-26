@@ -32,18 +32,28 @@ class BaseModelsManager:
                 Exemple: [{'model_type': 'random_forest', 'model_params': {'n_estimators': 100}, 'model_path_prefix': 'rf_model'}]
         """
         self.base_models_configs = base_models_configs
-        # self.fitted_base_models = [] # Remplacé par la sauvegarde sur disque
-        self.trained_full_data_model_paths: List[str] = [] # Stockera les chemins des modèles entraînés sur toutes les données
-        self.temp_dir_for_oof = tempfile.mkdtemp(prefix="oof_models_")
-        self.base_model_feature_importances_oof: List[Optional[Dict[str, float]]] = [] # Pour stocker les importances des features OOF
-        self.base_model_feature_importances_full: List[Optional[Dict[str, float]]] = [] # Pour stocker les importances des features des modèles complets
+        self.trained_full_data_model_paths: List[str] = []
+        self._temp_dir_for_oof_path: Optional[str] = None # Renommé pour clarté, initialisé plus tard
+        self.base_model_feature_importances_oof: List[Optional[Dict[str, float]]] = []
+        self.base_model_feature_importances_full: List[Optional[Dict[str, float]]] = []
 
+    @property
+    def temp_dir_for_oof(self) -> str:
+        """Crée le répertoire temporaire à la demande et le retourne."""
+        if self._temp_dir_for_oof_path is None:
+            self._temp_dir_for_oof_path = tempfile.mkdtemp(prefix="oof_models_")
+        return self._temp_dir_for_oof_path
 
     def _cleanup_temp_dir(self):
         """Nettoie le répertoire temporaire utilisé pour les modèles OOF."""
-        if hasattr(self, 'temp_dir_for_oof') and os.path.exists(self.temp_dir_for_oof):
-            shutil.rmtree(self.temp_dir_for_oof)
-            print(f"Répertoire temporaire {self.temp_dir_for_oof} supprimé.")
+        if self._temp_dir_for_oof_path and os.path.exists(self._temp_dir_for_oof_path):
+            try:
+                shutil.rmtree(self._temp_dir_for_oof_path)
+                print(f"Répertoire temporaire {self._temp_dir_for_oof_path} supprimé.")
+            except Exception as e:
+                print(f"Erreur lors de la suppression du répertoire temporaire {self._temp_dir_for_oof_path}: {e}")
+            finally:
+                self._temp_dir_for_oof_path = None # Réinitialiser pour éviter des suppressions multiples ou sur un chemin inexistant
 
     def __del__(self):
         """S'assure que le répertoire temporaire est nettoyé lors de la suppression de l'objet."""

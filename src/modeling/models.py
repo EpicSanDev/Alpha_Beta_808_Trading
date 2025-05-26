@@ -18,10 +18,13 @@ import xgboost # Pour la version
 # optuna est déjà importé
 # Imports pour les nouveaux modèles
 # Pour les réseaux de neurones (LSTM, CNN) - choisir l'un ou l'autre ou les deux
-# import tensorflow as tf
-# from tensorflow.keras.models import Sequential
-# from tensorflow.keras.layers import LSTM, Bidirectional, Dense, Dropout, Conv1D, MaxPooling1D, GlobalAveragePooling1D, Attention
-# from tensorflow.keras.layers import Reshape, Add, Activation, BatchNormalization # Pour Squeeze-and-Excitation, connexions résiduelles
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Bidirectional, Dense, Dropout, Conv1D, MaxPooling1D, GlobalAveragePooling1D # Attention retiré pour l'instant
+from tensorflow.keras.layers import Reshape, Add, Activation, BatchNormalization # Pour Squeeze-and-Excitation, connexions résiduelles
+from tensorflow.keras import regularizers
+from tensorflow.keras.callbacks import EarlyStopping
+
 
 # import torch
 # import torch.nn as nn
@@ -29,12 +32,12 @@ import xgboost # Pour la version
 
 # Pour les Processus Gaussiens
 # import GPy
-# import gpflow
+import gpflow
 
 # Pour les Modèles Bayésiens Hiérarchiques
-# import pymc3 as pm
-# import arviz as az
-# import stan
+import pymc as pm # Changé de pymc3 à pymc
+import arviz as az
+# import stan # Stan est plus complexe à intégrer directement, on se concentre sur PyMC
 
 # --- Définitions des Nouveaux Modèles ---
 
@@ -59,80 +62,96 @@ class BidirectionalLSTMModel:
         self.use_multi_resolution = use_multi_resolution # Placeholder
         self.temporal_regularization_factor = temporal_regularization_factor # Placeholder pour régularisation temporelle
         self.model = self._build_model()
+        # Potentielle dépendance: tensorflow.kerasself.input_shape = input_shape
+        self.num_layers = num_layers
+        self.units = units
+        self.output_units = output_units
+        self.activation = activation
+        self.dropout_rate = dropout_rate
+        self.variational_dropout = variational_dropout # Placeholder
+        self.l1_reg = l1_reg # Placeholder pour régularisation L1 sur les poids
+        self.l2_reg = l2_reg # Placeholder pour régularisation L2 sur les poids
+        self.use_temporal_attention = use_temporal_attention # Placeholder
+        self.use_multi_resolution = use_multi_resolution # Placeholder
+        self.temporal_regularization_factor = temporal_regularization_factor # Placeholder pour régularisation temporelle
+        self.model = self._build_model()
         # Potentielle dépendance: tensorflow.keras
 
     def _build_model(self):
-        # Placeholder pour la construction du modèle avec Keras/TensorFlow ou PyTorch
-        # Exemple avec Keras (à adapter)
-        # from tensorflow.keras import regularizers
-        # kernel_regularizer = None
-        # if self.l1_reg > 0 and self.l2_reg > 0:
-        #     kernel_regularizer = regularizers.l1_l2(l1=self.l1_reg, l2=self.l2_reg)
-        # elif self.l1_reg > 0:
-        #     kernel_regularizer = regularizers.l1(self.l1_reg)
-        # elif self.l2_reg > 0:
-        #     kernel_regularizer = regularizers.l2(self.l2_reg)
-        #
-        # model = Sequential()
-        # for i in range(self.num_layers):
-        #     return_sequences = True if i < self.num_layers - 1 else False
-        #     lstm_layer = LSTM(self.units, return_sequences=return_sequences, kernel_regularizer=kernel_regularizer)
-        #     if i == 0:
-        #         model.add(Bidirectional(lstm_layer, input_shape=self.input_shape))
-        #     else:
-        #         model.add(Bidirectional(lstm_layer))
-        #     if self.dropout_rate > 0:
-        #         # Placeholder pour dropout variationnel si self.variational_dropout est True
-        #         model.add(Dropout(self.dropout_rate))
-        #
+        kernel_regularizer = None
+        if self.l1_reg > 0 and self.l2_reg > 0:
+            kernel_regularizer = regularizers.l1_l2(l1=self.l1_reg, l2=self.l2_reg)
+        elif self.l1_reg > 0:
+            kernel_regularizer = regularizers.l1(self.l1_reg)
+        elif self.l2_reg > 0:
+            kernel_regularizer = regularizers.l2(self.l2_reg)
+
+        model = Sequential()
+        for i in range(self.num_layers):
+            return_sequences = True if i < self.num_layers - 1 else False
+            # TODO: Gérer le dropout variationnel (recurrent_dropout dans LSTM)
+            lstm_layer = LSTM(self.units, 
+                              return_sequences=return_sequences, 
+                              kernel_regularizer=kernel_regularizer,
+                              recurrent_dropout=self.dropout_rate if self.variational_dropout else 0) # Dropout variationnel
+            if i == 0:
+                model.add(Bidirectional(lstm_layer, input_shape=self.input_shape))
+            else:
+                model.add(Bidirectional(lstm_layer))
+            
+            if self.dropout_rate > 0 and not self.variational_dropout: # Dropout standard si non variationnel
+                model.add(Dropout(self.dropout_rate))
+        
+        # TODO: Implémenter l'attention temporelle si self.use_temporal_attention est True
         # if self.use_temporal_attention:
-        #     # Placeholder pour couche d'attention temporelle
-        #     pass # model.add(Attention(...))
-        #
-        # model.add(Dense(self.output_units, activation=self.activation))
-        # model.compile(optimizer='adam', loss='binary_crossentropy' if self.activation == 'sigmoid' else 'mse')
+        #     model.add(AttentionLayer(...)) # Placeholder pour une couche d'attention
+
+        model.add(Dense(self.output_units, activation=self.activation, kernel_regularizer=kernel_regularizer))
+        
+        loss_function = 'binary_crossentropy' if self.activation == 'sigmoid' else 'mse'
+        # TODO: Implémenter la régularisation temporelle via une perte personnalisée si self.temporal_regularization_factor
         # if self.temporal_regularization_factor:
-        #     # Ajouter une logique de perte personnalisée pour la régularisation temporelle
-        #     print(f"    Régularisation temporelle (facteur {self.temporal_regularization_factor}) à implémenter via perte personnalisée.")
-        print(f"Placeholder: Modèle LSTM Bidirectionnel construit avec {self.num_layers} couches, {self.units} unités.")
-        print("  Fonctionnalités avancées (placeholders):")
-        print(f"    Dropout: {self.dropout_rate}, Dropout variationnel: {self.variational_dropout}")
-        print(f"    Régularisation L1: {self.l1_reg}, L2: {self.l2_reg}")
-        print(f"    Attention temporelle: {self.use_temporal_attention}")
-        print(f"    Architecture multi-résolution: {self.use_multi_resolution}")
-        print(f"    Régularisation temporelle: {self.temporal_regularization_factor}")
-        return "keras_model_placeholder" # Remplacer par le vrai modèle
+        #    def custom_loss(y_true, y_pred):
+        #        base_loss = tf.keras.losses.get(loss_function)(y_true, y_pred)
+        #        # Ajouter la pénalité de régularisation temporelle ici
+        #        # Par exemple, pénaliser les grandes variations des poids cachés ou des activations sur le temps
+        #        # temp_reg = self.temporal_regularization_factor * compute_temporal_penalty(model)
+        #        # return base_loss + temp_reg
+        #        return base_loss # Placeholder
+        #    loss_to_compile = custom_loss
+        # else:
+        loss_to_compile = loss_function
+
+        model.compile(optimizer='adam', loss=loss_to_compile, metrics=['accuracy' if loss_function == 'binary_crossentropy' else 'mae'])
+        print(f"Modèle LSTM Bidirectionnel construit avec Keras: {self.num_layers} couches, {self.units} unités.")
+        if self.variational_dropout: print(f"  Dropout variationnel (recurrent_dropout): {self.dropout_rate}")
+        return model
 
     def fit(self, X, y, epochs=10, batch_size=32, validation_data=None, early_stopping_patience=None, **kwargs):
-        # Placeholder pour l'entraînement
-        # callbacks = []
-        # if validation_data and early_stopping_patience:
-        #     from tensorflow.keras.callbacks import EarlyStopping
-        #     early_stop_callback = EarlyStopping(monitor='val_loss', patience=early_stopping_patience, restore_best_weights=True)
-        #     callbacks.append(early_stop_callback)
-        #     print(f"  Early stopping activé avec patience={early_stopping_patience} sur val_loss.")
-        #
-        # self.model.fit(X, y, epochs=epochs, batch_size=batch_size, validation_data=validation_data, callbacks=callbacks, **kwargs)
-        print(f"Placeholder: Entraînement du LSTM Bidirectionnel pour {epochs} époques.")
-        if early_stopping_patience:
-            print(f"  Early stopping (placeholder) avec patience {early_stopping_patience}.")
-        pass
+        callbacks = []
+        if validation_data and early_stopping_patience:
+            early_stop_callback = EarlyStopping(monitor='val_loss', patience=early_stopping_patience, restore_best_weights=True, verbose=1)
+            callbacks.append(early_stop_callback)
+            print(f"  Early stopping activé avec patience={early_stopping_patience} sur val_loss.")
+        
+        print(f"Entraînement du LSTM Bidirectionnel pour {epochs} époques avec Keras.")
+        self.model.fit(X, y, epochs=epochs, batch_size=batch_size, validation_data=validation_data, callbacks=callbacks, verbose=kwargs.get('verbose', 1))
 
     def predict(self, X, **kwargs):
-        # Placeholder pour la prédiction
-        # return self.model.predict(X, **kwargs)
-        print("Placeholder: Prédiction avec LSTM Bidirectionnel.")
-        return np.random.rand(len(X), self.output_units) # Retourne des prédictions aléatoires
+        print("Prédiction avec LSTM Bidirectionnel (Keras).")
+        return self.model.predict(X, **kwargs)
 
     def predict_proba(self, X, **kwargs):
-        # Placeholder pour la prédiction de probabilités (si applicable)
-        # return self.model.predict(X, **kwargs) # Keras predict donne des probas pour sortie sigmoïde/softmax
-        print("Placeholder: Prédiction de probabilités avec LSTM Bidirectionnel.")
-        # Simule une sortie de probabilité pour la classe positive
-        raw_preds = np.random.rand(len(X), self.output_units)
+        print("Prédiction de probabilités avec LSTM Bidirectionnel (Keras).")
+        # Pour un modèle Keras avec sortie sigmoïde, predict() retourne déjà les probabilités pour la classe positive.
+        # Pour la compatibilité avec scikit-learn (qui attend (N, 2) pour binaire), on ajuste.
+        raw_preds = self.model.predict(X, **kwargs)
         if self.output_units == 1 and self.activation == 'sigmoid': # Cas binaire
-             return np.hstack((1-raw_preds, raw_preds)) # proba classe 0, proba classe 1
-        return raw_preds # Cas multi-classe ou régression (à ajuster)
+            if raw_preds.ndim == 1: # Si la sortie est déjà (N,)
+                return np.vstack((1 - raw_preds, raw_preds)).T # (N, 2)
+            elif raw_preds.ndim == 2 and raw_preds.shape[1] == 1: # Si la sortie est (N, 1)
+                return np.hstack((1 - raw_preds, raw_preds)) # (N, 2)
+        return raw_preds # Cas multi-classe (N, C) ou régression (N, output_units)
 
     def analyze_sensitivity(self, X_perturbed_sequence: np.ndarray, original_predictions: np.ndarray) -> Dict[str, Any]:
         """
@@ -172,92 +191,93 @@ class TemporalCNNModel:
         self.num_conv_layers = num_conv_layers
         self.output_units = output_units
         self.activation = activation
-        self.dropout_rate = dropout_rate # Ajout du paramètre dropout
-        self.l1_reg = l1_reg # Placeholder pour régularisation L1 sur les poids Conv/Dense
-        self.l2_reg = l2_reg # Placeholder pour régularisation L2 sur les poids Conv/Dense
-        self.use_residual_connections = use_residual_connections # Placeholder
-        self.use_squeeze_excitation = use_squeeze_excitation # Placeholder
-        self.use_hourglass_architecture = use_hourglass_architecture # Placeholder
-        self.temporal_regularization_factor = temporal_regularization_factor # Placeholder pour régularisation temporelle
+        self.dropout_rate = dropout_rate
+        self.l1_reg = l1_reg
+        self.l2_reg = l2_reg
+        self.use_residual_connections = use_residual_connections
+        self.use_squeeze_excitation = use_squeeze_excitation
+        self.use_hourglass_architecture = use_hourglass_architecture
+        self.temporal_regularization_factor = temporal_regularization_factor
         self.model = self._build_model()
         # Potentielle dépendance: tensorflow.keras ou torch
 
     def _build_model(self):
-        # Placeholder pour la construction du modèle
-        # Exemple avec Keras (à adapter)
-        # from tensorflow.keras import regularizers
-        # from tensorflow.keras.layers import Dropout # Ajout import Dropout
-        # kernel_regularizer = None
-        # if self.l1_reg > 0 and self.l2_reg > 0:
-        #     kernel_regularizer = regularizers.l1_l2(l1=self.l1_reg, l2=self.l2_reg)
-        # elif self.l1_reg > 0:
-        #     kernel_regularizer = regularizers.l1(self.l1_reg)
-        # elif self.l2_reg > 0:
-        #     kernel_regularizer = regularizers.l2(self.l2_reg)
-        #
-        # inputs = tf.keras.Input(shape=self.input_shape)
-        # x = inputs
-        # for _ in range(self.num_conv_layers):
-        #     prev_x = x
-        #     x = Conv1D(filters=self.num_filters, kernel_size=self.kernel_size, padding='causal', activation='relu', kernel_regularizer=kernel_regularizer)(x)
-        #     # x = BatchNormalization()(x) # Optionnel
-        #     if self.dropout_rate > 0: # Ajout Dropout après Conv1D
-        #         x = Dropout(self.dropout_rate)(x)
-        #     if self.use_residual_connections and prev_x.shape == x.shape:
-        #         x = Add()([prev_x, x])
-        #     if self.use_squeeze_excitation:
-        #         # Placeholder pour Squeeze-and-Excitation block
-        #         pass
-        #
+        kernel_regularizer = None
+        if self.l1_reg > 0 and self.l2_reg > 0:
+            kernel_regularizer = regularizers.l1_l2(l1=self.l1_reg, l2=self.l2_reg)
+        elif self.l1_reg > 0:
+            kernel_regularizer = regularizers.l1(self.l1_reg)
+        elif self.l2_reg > 0:
+            kernel_regularizer = regularizers.l2(self.l2_reg)
+
+        inputs = tf.keras.Input(shape=self.input_shape)
+        x = inputs
+        
+        # Placeholder pour architecture en sablier (encodeur-décodeur)
         # if self.use_hourglass_architecture:
-        #     # Placeholder pour architecture encodeur-décodeur
-        #     pass
-        #
-        # x = GlobalAveragePooling1D()(x) # Ou Flatten()
-        # outputs = Dense(self.output_units, activation=self.activation, kernel_regularizer=kernel_regularizer)(x) # Ajout regularizer à Dense
-        # model = tf.keras.Model(inputs, outputs)
-        # model.compile(optimizer='adam', loss='binary_crossentropy' if self.activation == 'sigmoid' else 'mse')
-        # if self.temporal_regularization_factor:
-        #     # Ajouter une logique de perte personnalisée pour la régularisation temporelle
-        #     print(f"    Régularisation temporelle (facteur {self.temporal_regularization_factor}) à implémenter via perte personnalisée.")
-        print(f"Placeholder: Modèle CNN Temporel construit avec {self.num_conv_layers} couches Conv1D.")
-        print("  Fonctionnalités avancées (placeholders):")
-        print(f"    Dropout: {self.dropout_rate}")
-        print(f"    Régularisation L1: {self.l1_reg}, L2: {self.l2_reg}")
-        print(f"    Connexions résiduelles: {self.use_residual_connections}")
-        print(f"    Squeeze-and-Excitation: {self.use_squeeze_excitation}")
-        print(f"    Architecture en sablier: {self.use_hourglass_architecture}")
-        print(f"    Régularisation temporelle: {self.temporal_regularization_factor}")
-        return "keras_tcn_model_placeholder" # Remplacer par le vrai modèle
+        #     # Logique d'encodeur
+        #     # ...
+        #     # Logique de décodeur
+        #     # ...
+        # else: # Architecture CNN standard
+        for i in range(self.num_conv_layers):
+            prev_x = x # Pour connexions résiduelles
+            # TODO: Implémenter TCN avec des convolutions causales et dilatées si nécessaire
+            x = Conv1D(filters=self.num_filters, 
+                       kernel_size=self.kernel_size, 
+                       padding='causal', # Causal pour les séries temporelles
+                       activation='relu', # Souvent ReLU ou variantes dans les TCN
+                       kernel_regularizer=kernel_regularizer)(x)
+            x = BatchNormalization()(x) # Souvent utilisé dans les TCN
+            if self.dropout_rate > 0:
+                x = Dropout(self.dropout_rate)(x)
+            
+            # Connexion résiduelle simple (si les dimensions correspondent)
+            if self.use_residual_connections:
+                if prev_x.shape[-1] == x.shape[-1]: # Même nombre de filtres
+                    x = Add()([prev_x, x])
+                elif i > 0 : # Si pas la première couche, on peut projeter prev_x
+                    prev_x_proj = Conv1D(filters=self.num_filters, kernel_size=1, padding='same')(prev_x)
+                    x = Add()([prev_x_proj, x])
+            
+            # TODO: Implémenter Squeeze-and-Excitation si self.use_squeeze_excitation
+            # if self.use_squeeze_excitation:
+            #    x = SqueezeExcitationBlock()(x) # Placeholder
+
+        x = GlobalAveragePooling1D()(x)
+        outputs = Dense(self.output_units, activation=self.activation, kernel_regularizer=kernel_regularizer)(x)
+        
+        model = tf.keras.Model(inputs, outputs)
+        
+        loss_function = 'binary_crossentropy' if self.activation == 'sigmoid' else 'mse'
+        # TODO: Régularisation temporelle via perte personnalisée
+        model.compile(optimizer='adam', loss=loss_function, metrics=['accuracy' if loss_function == 'binary_crossentropy' else 'mae'])
+        print(f"Modèle CNN Temporel (TCN-like) construit avec Keras: {self.num_conv_layers} couches Conv1D.")
+        return model
 
     def fit(self, X, y, epochs=10, batch_size=32, validation_data=None, early_stopping_patience=None, **kwargs):
-        # Placeholder pour l'entraînement
-        # callbacks = []
-        # if validation_data and early_stopping_patience:
-        #     from tensorflow.keras.callbacks import EarlyStopping
-        #     early_stop_callback = EarlyStopping(monitor='val_loss', patience=early_stopping_patience, restore_best_weights=True)
-        #     callbacks.append(early_stop_callback)
-        #     print(f"  Early stopping activé avec patience={early_stopping_patience} sur val_loss.")
-        #
-        # self.model.fit(X, y, epochs=epochs, batch_size=batch_size, validation_data=validation_data, callbacks=callbacks, **kwargs)
-        print(f"Placeholder: Entraînement du CNN Temporel pour {epochs} époques.")
-        if early_stopping_patience:
-            print(f"  Early stopping (placeholder) avec patience {early_stopping_patience}.")
-        pass
+        callbacks = []
+        if validation_data and early_stopping_patience:
+            early_stop_callback = EarlyStopping(monitor='val_loss', patience=early_stopping_patience, restore_best_weights=True, verbose=1)
+            callbacks.append(early_stop_callback)
+            print(f"  Early stopping activé avec patience={early_stopping_patience} sur val_loss.")
+
+        print(f"Entraînement du CNN Temporel pour {epochs} époques avec Keras.")
+        self.model.fit(X, y, epochs=epochs, batch_size=batch_size, validation_data=validation_data, callbacks=callbacks, verbose=kwargs.get('verbose', 1))
 
     def predict(self, X, **kwargs):
-        # Placeholder pour la prédiction
-        # return self.model.predict(X, **kwargs)
-        print("Placeholder: Prédiction avec CNN Temporel.")
-        return np.random.rand(len(X), self.output_units)
+        print("Prédiction avec CNN Temporel (Keras).")
+        return self.model.predict(X, **kwargs)
 
     def predict_proba(self, X, **kwargs):
-        # Placeholder pour la prédiction de probabilités
-        print("Placeholder: Prédiction de probabilités avec CNN Temporel.")
-        raw_preds = np.random.rand(len(X), self.output_units)
+        print("Prédiction de probabilités avec CNN Temporel (Keras).")
+        raw_preds = self.model.predict(X, **kwargs)
         if self.output_units == 1 and self.activation == 'sigmoid':
-             return np.hstack((1-raw_preds, raw_preds))
-        return raw_preds # Assurer que cette ligne est correctement indentée avec le if/else précédent
+            if raw_preds.ndim == 1:
+                return np.vstack((1 - raw_preds, raw_preds)).T
+            elif raw_preds.ndim == 2 and raw_preds.shape[1] == 1:
+                return np.hstack((1 - raw_preds, raw_preds))
+        return raw_preds
 
     def analyze_sensitivity(self, X_perturbed_sequence: np.ndarray, original_predictions: np.ndarray) -> Dict[str, Any]:
         """
@@ -281,61 +301,122 @@ class GaussianProcessRegressionModel:
     Modèle de Régression par Processus Gaussien.
     Inspiré de la section 5.3.4 du document de référence.
     """
-    def __init__(self, kernel_spec=None, inducing_points_ratio=None, random_state=None, **kwargs):
-        self.kernel_spec = kernel_spec # Ex: {'type': 'RBF', 'params': {'input_dim': 1, 'variance': 1., 'lengthscale': 1.}}
-                                      # Ou une liste pour noyaux composites
-        self.inducing_points_ratio = inducing_points_ratio # Pour approximations (ex: 0.1 pour 10% de points)
-        self.random_state = random_state # Pour la reproductibilité si nécessaire
+    def __init__(self, kernel_spec=None, inducing_points_ratio=None, random_state=None, num_features=None, **kwargs): # Ajout num_features
+        self.kernel_spec = kernel_spec
+        self.inducing_points_ratio = inducing_points_ratio
+        self.random_state = random_state
+        self.num_features = num_features # Nécessaire pour initialiser le noyau GPflow
         self.model = self._build_model(**kwargs)
-        # Potentielle dépendance: GPy ou GPflow
+        # Dépendance: gpflow
 
-    def _build_model(self, X_train_shape=None, **kwargs):
-        # Placeholder pour la construction du modèle GP
-        # Exemple avec GPy (nécessite X_train_shape pour initialiser le noyau si input_dim n'est pas dans kernel_spec)
-        # if self.kernel_spec is None:
-        #     input_dim = X_train_shape[1] if X_train_shape else 1
-        #     kernel = GPy.kern.RBF(input_dim=input_dim) + GPy.kern.White(input_dim=input_dim)
-        # else:
-        #     # Logique pour construire un noyau composite à partir de kernel_spec
-        #     kernel = GPy.kern.RBF(input_dim=X_train_shape[1] if X_train_shape else 1) # Placeholder
-        #
-        # if self.inducing_points_ratio and X_train_shape:
-        #     num_inducing = int(X_train_shape[0] * self.inducing_points_ratio)
-        #     # Z = GPy.util.linalg.tdot(np.random.permutation(X_train_shape[0])[:num_inducing]) # Pas sûr de ça
-        #     # model = GPy.models.SparseGPRegression(X_placeholder, Y_placeholder, kernel, num_inducing_points=num_inducing)
-        #     print(f"Placeholder: Modèle GP Sparsifié avec {num_inducing} points induisants.")
-        # else:
-        #     # model = GPy.models.GPRegression(X_placeholder, Y_placeholder, kernel)
-        #     print("Placeholder: Modèle GP standard.")
-        print(f"Placeholder: Modèle de Processus Gaussien construit.")
-        print(f"  Spécification du noyau: {self.kernel_spec}")
-        print(f"  Ratio de points induisants: {self.inducing_points_ratio}")
-        return "gpy_model_placeholder" # Remplacer par le vrai modèle
+    def _build_model(self, X_train_sample_for_inducing_variable=None, **kwargs): # X_train_shape renommé
+        if self.num_features is None:
+            raise ValueError("num_features doit être fourni pour initialiser GaussianProcessRegressionModel.")
 
-    def fit(self, X, y, optimize_restarts=5, **kwargs):
-        # Placeholder pour l'entraînement (optimisation des hyperparamètres du noyau)
-        # self.model.X = X
-        # self.model.Y = y.reshape(-1,1) if len(y.shape) == 1 else y
-        # self.model.optimize_restarts(num_restarts=optimize_restarts, verbose=False)
-        print(f"Placeholder: Entraînement du Processus Gaussien (optimisation des hyperparamètres du noyau avec {optimize_restarts} redémarrages).")
-        pass
+        # Construction du noyau GPflow
+        if self.kernel_spec is None: # Noyau par défaut
+            kernel = gpflow.kernels.SquaredExponential(lengthscales=[1.0]*self.num_features) + gpflow.kernels.White(variance=0.1)
+            print(f"Utilisation du noyau GPflow par défaut: SquaredExponential + White pour {self.num_features} features.")
+        else:
+            # TODO: Logique plus avancée pour construire des noyaux composites à partir de kernel_spec
+            # Exemple simple:
+            if self.kernel_spec.get('type') == 'Matern52':
+                kernel = gpflow.kernels.Matern52(lengthscales=self.kernel_spec.get('params', {}).get('lengthscale', [1.0]*self.num_features))
+            else: # Fallback sur RBF (SquaredExponential)
+                kernel = gpflow.kernels.SquaredExponential(lengthscales=self.kernel_spec.get('params', {}).get('lengthscale', [1.0]*self.num_features))
+            print(f"Noyau GPflow construit selon kernel_spec: {self.kernel_spec}")
+
+        # Construction du modèle GPflow
+        # Les données X et Y seront passées lors du .fit()
+        # Pour les modèles clairsemés (Sparse), il faut des points induisants Z
+        if self.inducing_points_ratio and X_train_sample_for_inducing_variable is not None:
+            num_inducing = int(X_train_sample_for_inducing_variable.shape[0] * self.inducing_points_ratio)
+            if num_inducing == 0 and X_train_sample_for_inducing_variable.shape[0] > 0 : num_inducing = 1 # Au moins un point
+            
+            if num_inducing > 0:
+                # Sélectionner des points induisants (par exemple, aléatoirement depuis X_train_sample)
+                # S'assurer que X_train_sample_for_inducing_variable est un array numpy
+                if isinstance(X_train_sample_for_inducing_variable, pd.DataFrame):
+                    X_numpy_sample = X_train_sample_for_inducing_variable.values
+                else:
+                    X_numpy_sample = X_train_sample_for_inducing_variable
+
+                if self.random_state is not None:
+                    np.random.seed(self.random_state)
+                
+                idx = np.random.choice(X_numpy_sample.shape[0], size=min(num_inducing, X_numpy_sample.shape[0]), replace=False)
+                Z = X_numpy_sample[idx, :].copy()
+                
+                # Utiliser SVGP (Stochastic Variational Gaussian Process) pour la scalabilité
+                # Nécessite des données (X,Y) pour l'initialisation, mais on les passera au fit.
+                # On initialise avec des placeholders ou des données factices de la bonne forme.
+                # Pour l'instant, on retourne le noyau et Z, le modèle sera créé dans fit.
+                print(f"Modèle GPflow (SVGP-like) sera construit avec {num_inducing} points induisants.")
+                return {"kernel": kernel, "inducing_variable": Z, "type": "sparse"}
+            else:
+                 print("Ratio de points induisants spécifié mais num_inducing est 0. Utilisation d'un modèle GP complet.")
+                 return {"kernel": kernel, "type": "full"}
+        else:
+            print("Modèle GPflow (GPR) standard sera construit.")
+            return {"kernel": kernel, "type": "full"} # Le modèle GPR sera créé dans fit
+
+    def fit(self, X, y, optimize_restarts=1, max_iterations=100, **kwargs): # optimize_restarts moins pertinent pour gpflow.train.ScipyOptimizer
+        # X et y doivent être des tf.Tensor
+        X_tf = tf.convert_to_tensor(X, dtype=tf.float64)
+        y_tf = tf.convert_to_tensor(y.reshape(-1,1) if y.ndim == 1 else y, dtype=tf.float64)
+
+        model_components = self.model # C'est un dict {"kernel": ..., "type": ..., "inducing_variable": ...}
+        kernel = model_components["kernel"]
+
+        if model_components["type"] == "sparse":
+            Z = model_components["inducing_variable"]
+            if Z.shape[1] != X_tf.shape[1]: # S'assurer que Z a le bon nombre de features
+                 raise ValueError(f"Les points induisants Z ont {Z.shape[1]} features, mais X en a {X_tf.shape[1]}.")
+            self.gpflow_model = gpflow.models.SVGP(kernel, gpflow.likelihoods.Gaussian(), Z, num_data=X_tf.shape[0])
+            print(f"Entraînement du modèle GPflow SVGP avec {Z.shape[0]} points induisants.")
+        else: # full GPR
+            self.gpflow_model = gpflow.models.GPR((X_tf, y_tf), kernel=kernel, mean_function=None)
+            print("Entraînement du modèle GPflow GPR standard.")
+
+        # Optimisation des hyperparamètres du modèle
+        opt = gpflow.optimizers.Scipy()
+        # Pour SVGP, on optimise les paramètres variationnels et les hyperparamètres du noyau/likelihood
+        # Pour GPR, on optimise les hyperparamètres du noyau/likelihood
+        
+        # Créer une fonction de perte à minimiser (log marginal likelihood négatif)
+        if hasattr(self.gpflow_model, 'training_loss'): # Pour SVGP et SGPR
+            loss_fn = self.gpflow_model.training_loss_closure((X_tf, y_tf) if model_components["type"] == "sparse" else None)
+        else: # Pour GPR, il n'y a pas de training_loss_closure direct, on utilise log_marginal_likelihood
+            @tf.function
+            def objective_closure():
+                return -self.gpflow_model.log_marginal_likelihood()
+            loss_fn = objective_closure
+
+        print(f"Optimisation des hyperparamètres du modèle GPflow (max {max_iterations} itérations)...")
+        opt_logs = opt.minimize(loss_fn,
+                                self.gpflow_model.trainable_variables,
+                                options=dict(maxiter=max_iterations),
+                                method="L-BFGS-B") # L-BFGS-B est souvent utilisé
+        print("Optimisation terminée.")
+        if hasattr(opt_logs, 'success') and hasattr(opt_logs, 'message'):
+            print(f"  Succès: {opt_logs.success}, Message: {opt_logs.message}")
+
 
     def predict(self, X, **kwargs):
-        # Placeholder pour la prédiction (moyenne et variance)
-        # mean, variance = self.model.predict(X, **kwargs)
-        # return mean # Ou (mean, variance) selon le besoin
-        print("Placeholder: Prédiction avec Processus Gaussien (moyenne).")
-        return np.random.rand(len(X), 1) # Simule la prédiction de la moyenne
+        if not hasattr(self, 'gpflow_model'):
+            raise RuntimeError("Le modèle GPflow n'a pas été entraîné. Appelez fit() d'abord.")
+        X_tf = tf.convert_to_tensor(X, dtype=tf.float64)
+        mean, _ = self.gpflow_model.predict_y(X_tf) # predict_y retourne (mean, var) des prédictions Y
+        print("Prédiction avec GPflow (moyenne).")
+        return mean.numpy()
 
     def predict_proba(self, X, **kwargs):
-        # Pour les GP en régression, predict_proba retourne la moyenne et la variance.
-        # mean, variance = self.model.predict(X, **kwargs) # La vraie implémentation GPy/GPflow
-        print("Placeholder: Prédiction avec Processus Gaussien (moyenne et variance simulées).")
-        mean = np.random.rand(len(X), 1) # Simule la prédiction de la moyenne
-        variance = np.random.rand(len(X), 1) * 0.1 # Simule la variance, doit être positif
-        # S'assurer que la variance est positive
-        variance = np.abs(variance)
-        return mean, variance # Retourne un tuple (moyenne, variance)
+        if not hasattr(self, 'gpflow_model'):
+            raise RuntimeError("Le modèle GPflow n'a pas été entraîné. Appelez fit() d'abord.")
+        X_tf = tf.convert_to_tensor(X, dtype=tf.float64)
+        mean, variance = self.gpflow_model.predict_y(X_tf)
+        print("Prédiction avec GPflow (moyenne et variance).")
+        return mean.numpy(), variance.numpy()
 
     def analyze_sensitivity(self, X_perturbed: np.ndarray, original_predictions_mean: np.ndarray) -> Dict[str, Any]:
         """
@@ -359,51 +440,109 @@ class HierarchicalBayesianModelPlaceholder:
     Inspiré de la section 5.3.4 du document de référence.
     Dépendance potentielle: PyMC, Stan.
     """
-    def __init__(self, model_specification=None, informative_priors=None, adaptive_mcmc=True, **kwargs):
-        self.model_specification = model_specification # Pour définir la structure du modèle
-        self.informative_priors = informative_priors # Pour spécifier les priors
-        self.adaptive_mcmc = adaptive_mcmc # Option pour MCMC adaptatif
-        self.trace = None # Pour stocker les résultats de l'échantillonnage
-        # Potentielle dépendance: pymc ou stan
-        print("Placeholder: Modèle Bayésien Hiérarchique initialisé.")
-        print(f"  Spécification du modèle: {self.model_specification}")
-        print(f"  Priors informatifs: {self.informative_priors}")
-        print(f"  MCMC adaptatif: {self.adaptive_mcmc}")
+    def __init__(self, model_specification_func=None, informative_priors=None, adaptive_mcmc=True, num_features=None, **kwargs): # Ajout num_features
+        self.model_specification_func = model_specification_func # Fonction qui définit le modèle PyMC
+        self.informative_priors = informative_priors
+        self.adaptive_mcmc = adaptive_mcmc
+        self.num_features = num_features # Peut être utile pour la fonction de spécification
+        self.pymc_model = None # Le modèle PyMC construit
+        self.trace = None
+        # Dépendance: pymc, arviz
+        print("Modèle Bayésien Hiérarchique (PyMC) initialisé.")
 
-    def fit(self, X, y, draws=2000, tune=1000, chains=2, **kwargs):
-        # Placeholder pour l'échantillonnage MCMC
-        # with pm.Model() as hierarchical_model:
-        #     # Définir les priors (potentiellement informatifs)
-        #     # Définir la vraisemblance
-        #     # ...
-        #     if self.adaptive_mcmc:
-        #         # Utiliser des méthodes d'échantillonnage adaptatif (ex: NUTS pour PyMC)
-        #         step = pm.NUTS()
-        #         self.trace = pm.sample(draws, tune=tune, chains=chains, step=step, return_inferencedata=True, **kwargs)
-        #     else:
-        #         self.trace = pm.sample(draws, tune=tune, chains=chains, return_inferencedata=True, **kwargs)
-        print(f"Placeholder: Entraînement (échantillonnage MCMC) du Modèle Bayésien Hiérarchique.")
-        print(f"  Tirages: {draws}, Burn-in: {tune}, Chaînes: {chains}")
-        self.trace = "mcmc_trace_placeholder" # Remplacer par les vrais résultats
-        pass
+    def fit(self, X, y, draws=1000, tune=1000, chains=2, target_accept=0.8, **kwargs): # Réduction draws pour tests rapides
+        if self.model_specification_func is None:
+            raise ValueError("Une fonction `model_specification_func(X, y, num_features, priors)` doit être fournie pour définir le modèle PyMC.")
 
-    def predict(self, X, **kwargs):
-        # Placeholder pour la prédiction (souvent basée sur la distribution a posteriori)
-        # ppc = pm.sample_posterior_predictive(self.trace, samples=500, model=self.hierarchical_model, var_names=['prediction_target'])
-        # return np.mean(ppc['prediction_target'], axis=0)
-        print("Placeholder: Prédiction avec Modèle Bayésien Hiérarchique.")
-        return np.random.rand(len(X), 1) # Simule des prédictions
+        # Convertir X et y en arrays numpy si ce sont des DataFrames/Series pandas
+        X_np = X.values if isinstance(X, pd.DataFrame) else X
+        y_np = y.values if isinstance(y, pd.Series) else y
+        if y_np.ndim == 1: y_np = y_np.reshape(-1,1)
 
-    def predict_proba(self, X, **kwargs) -> np.ndarray: # Type de retour clarifié
-        # Pour les modèles bayésiens, on a toute la distribution a posteriori.
-        # Retourne des échantillons de la distribution prédictive a posteriori.
-        # La forme sera (nombre d'échantillons de X, nombre d'échantillons MCMC par prédiction)
-        # Exemple: si X a 10 lignes, et on tire 500 échantillons MCMC pour chaque, la sortie est (10, 500)
-        print("Placeholder: Prédiction (échantillons de la distribution a posteriori) avec Modèle Bayésien Hiérarchique.")
-        # ppc = pm.sample_posterior_predictive(self.trace, samples=num_mcmc_samples, model=self.hierarchical_model, var_names=['prediction_target'])
-        # return ppc['prediction_target'].T # Transposer pour avoir (len(X), num_mcmc_samples)
-        num_mcmc_samples = kwargs.get('num_mcmc_samples', 100) # Permet de spécifier le nombre d'échantillons
-        return np.random.rand(len(X), num_mcmc_samples) # ex: 100 échantillons MCMC par point de données X
+
+        # Construire le modèle PyMC en appelant la fonction fournie
+        # La fonction de spécification est responsable de la création du contexte `pm.Model()`
+        self.pymc_model = self.model_specification_func(X_np, y_np, self.num_features, self.informative_priors)
+
+        if not isinstance(self.pymc_model, pm.Model):
+             raise TypeError("`model_specification_func` doit retourner une instance de `pm.Model`.")
+
+        with self.pymc_model:
+            step_method = None
+            if self.adaptive_mcmc:
+                # NUTS est généralement un bon choix pour les modèles continus complexes
+                step_method = pm.NUTS(target_accept=target_accept)
+                print(f"Utilisation de l'échantillonneur NUTS adaptatif (target_accept={target_accept}).")
+            
+            print(f"Début de l'échantillonnage MCMC avec PyMC: {draws} tirages, {tune} burn-in, {chains} chaînes.")
+            self.trace = pm.sample(draws, tune=tune, chains=chains, step=step_method, 
+                                   return_inferencedata=True, 
+                                   random_seed=kwargs.get('random_state', None), # Pour reproductibilité
+                                   idata_kwargs={"log_likelihood": True}) # Pour calculs de WAIC/LOO
+            print("Échantillonnage MCMC terminé.")
+            # Afficher un résumé si arviz est disponible
+            if self.trace:
+                try:
+                    summary = az.summary(self.trace, round_to=2)
+                    print("Résumé du tracé MCMC (arviz):")
+                    print(summary)
+                except Exception as e:
+                    print(f"Impossible d'afficher le résumé arviz: {e}")
+
+
+    def predict(self, X, num_samples_ppc=500, **kwargs): # num_samples_ppc pour le nombre d'échantillons de la prédictive a posteriori
+        if self.pymc_model is None or self.trace is None:
+            raise RuntimeError("Le modèle PyMC n'a pas été entraîné ou le tracé est manquant. Appelez fit() d'abord.")
+
+        X_np = X.values if isinstance(X, pd.DataFrame) else X
+        # Pour faire des prédictions, il faut généralement mettre à jour les données observées
+        # ou utiliser pm.set_data si le modèle a été construit avec des pm.MutableData.
+        # Ici, on suppose que la fonction de spécification du modèle a une variable `X_shared`
+        # et une variable `out_shared` (ou similaire) pour la prédiction.
+        # C'est une simplification; une implémentation robuste nécessite une gestion soignée des données partagées.
+        
+        # Placeholder pour la logique de mise à jour des données partagées dans le modèle PyMC
+        # with self.pymc_model:
+        #     pm.set_data({'X_input_data': X_np}) # Supposant que 'X_input_data' est le nom de la donnée partagée pour X
+        #     ppc = pm.sample_posterior_predictive(self.trace, var_names=["likelihood_obs"], # "likelihood_obs" ou le nom de votre variable de sortie
+        #                                           samples=num_samples_ppc, random_seed=kwargs.get('random_state'))
+        #
+        # # Les prédictions sont souvent la moyenne des échantillons de la distribution prédictive a posteriori
+        # # La forme de ppc.posterior_predictive["likelihood_obs"] sera (chaînes, tirages, X_np.shape[0], output_dim)
+        # # Il faut l'aplatir et prendre la moyenne sur les échantillons MCMC.
+        # pred_samples = ppc.posterior_predictive["likelihood_obs"].stack(samples=("chain", "draw")).values
+        # # pred_samples aura shape (num_mcmc_total_samples, X_np.shape[0], output_dim)
+        # # On veut (X_np.shape[0], output_dim) en moyennant sur les échantillons MCMC
+        # final_predictions = np.mean(pred_samples, axis=0)
+
+        print("Placeholder: Prédiction avec Modèle Bayésien Hiérarchique (PyMC).")
+        print("  La prédiction réelle nécessite une gestion des données partagées dans le modèle PyMC.")
+        # Simule une sortie de la forme (len(X), 1) pour la régression
+        return np.random.rand(len(X_np), 1)
+
+
+    def predict_proba(self, X, num_samples_ppc=500, **kwargs) -> np.ndarray:
+        if self.pymc_model is None or self.trace is None:
+            raise RuntimeError("Le modèle PyMC n'a pas été entraîné ou le tracé est manquant.")
+
+        X_np = X.values if isinstance(X, pd.DataFrame) else X
+        # Similaire à predict(), la prédiction de "probabilités" (ou plutôt d'échantillons de la distribution a posteriori)
+        # nécessite une gestion des données partagées.
+        # with self.pymc_model:
+        #     pm.set_data({'X_input_data': X_np})
+        #     ppc = pm.sample_posterior_predictive(self.trace, var_names=["likelihood_obs"], # ou le nom de votre variable de sortie
+        #                                           samples=num_samples_ppc, random_seed=kwargs.get('random_state'))
+        # pred_samples = ppc.posterior_predictive["likelihood_obs"].stack(samples=("chain", "draw")).values
+        # # pred_samples a shape (num_mcmc_total_samples, X_np.shape[0], output_dim)
+        # # Pour predict_proba, on retourne souvent ces échantillons directement, transposés pour avoir (len(X), num_mcmc_samples) si output_dim=1
+        # if pred_samples.shape[2] == 1: # Si output_dim est 1
+        #     return pred_samples.squeeze(axis=2).T # (len(X), num_mcmc_total_samples)
+        # else: # Pour output_dim > 1, la gestion est plus complexe
+        #     return pred_samples # Retourner (num_mcmc_total_samples, len(X), output_dim) ou adapter
+
+        print("Placeholder: Prédiction (échantillons PPC) avec Modèle Bayésien Hiérarchique (PyMC).")
+        # Simule une sortie de la forme (len(X), num_samples_ppc)
+        return np.random.rand(len(X_np), num_samples_ppc)
 
     def analyze_sensitivity(self, X_perturbed: np.ndarray, original_posterior_samples: np.ndarray) -> Dict[str, Any]:
         """
@@ -491,8 +630,14 @@ def _objective_optuna(trial: optuna.Trial, X_opt: pd.DataFrame, y_opt: pd.Series
     """
     scores = []
     
+    # Définir les paramètres pour le constructeur du modèle
+    constructor_cv_params = {}
+    # Paramètres spécifiques pour la méthode .fit()
+    fit_cv_params = {} 
+    callbacks_cv = [] # Callbacks pour .fit()
+
     if model_type == 'random_forest':
-        params = {
+        constructor_cv_params = {
             'n_estimators': trial.suggest_int('n_estimators', 50, 250),
             'max_depth': trial.suggest_int('max_depth', 3, 30, log=True),
             'min_samples_split': trial.suggest_int('min_samples_split', 2, 30),
@@ -503,26 +648,34 @@ def _objective_optuna(trial: optuna.Trial, X_opt: pd.DataFrame, y_opt: pd.Series
             'n_jobs': -1
         }
         model_builder = RandomForestClassifier
-        current_model_scale_features = False
+        current_model_scale_features = False 
     elif model_type == 'xgboost_classifier':
-        params = {
+        constructor_cv_params = {
             'n_estimators': trial.suggest_int('n_estimators', 50, 400),
             'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.35, log=True),
             'max_depth': trial.suggest_int('max_depth', 2, 12),
-            'min_child_weight': trial.suggest_int('min_child_weight', 1, 20), # Ajout de min_child_weight
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 20),
             'subsample': trial.suggest_float('subsample', 0.4, 1.0),
             'colsample_bytree': trial.suggest_float('colsample_bytree', 0.4, 1.0),
             'gamma': trial.suggest_float('gamma', 0, 0.6),
-            'lambda': trial.suggest_float('lambda', 1e-9, 1.0, log=True), # L2 reg
-            'alpha': trial.suggest_float('alpha', 1e-9, 1.0, log=True), # L1 reg
+            'lambda': trial.suggest_float('lambda', 1e-9, 1.0, log=True), 
+            'alpha': trial.suggest_float('alpha', 1e-9, 1.0, log=True), 
             'objective': 'binary:logistic',
-            'eval_metric': 'auc',
-            'random_state': global_random_state
+            'eval_metric': 'logloss', # Métrique pour l'évaluation, peut être 'auc', 'logloss', etc.
+            'random_state': global_random_state,
         }
         if precomputed_class_weight_dict and len(precomputed_class_weight_dict) == 2:
             counts = y_opt.value_counts()
             if 0 in counts and 1 in counts and counts[1] > 0:
-                params['scale_pos_weight'] = counts[0] / counts[1]
+                constructor_cv_params['scale_pos_weight'] = counts[0] / counts[1]
+        
+        # Early stopping via constructor parameter (XGBoost v3.0.2+ approach)
+        early_stopping_rounds_val = trial.suggest_int('early_stopping_rounds_cv', 10, 50)
+        constructor_cv_params['early_stopping_rounds'] = early_stopping_rounds_val
+        
+        # Verbose parameter for fit method
+        fit_cv_params['verbose'] = False # ou 0 pour pas de sortie
+        
         model_builder = xgb.XGBClassifier
         current_model_scale_features = False
     else:
@@ -537,42 +690,45 @@ def _objective_optuna(trial: optuna.Trial, X_opt: pd.DataFrame, y_opt: pd.Series
         scaler_cv = None
         X_train_cv_processed = X_train_cv
         X_val_cv_processed = X_val_cv
+        
+        is_scaling_needed_for_current_cv_model = current_model_scale_features if 'current_model_scale_features' in locals() else False
 
-        if current_model_scale_features:
+        if is_scaling_needed_for_current_cv_model: 
             scaler_cv = StandardScaler()
             X_train_cv_processed = pd.DataFrame(scaler_cv.fit_transform(X_train_cv), columns=X_train_cv.columns, index=X_train_cv.index)
             X_val_cv_processed = pd.DataFrame(scaler_cv.transform(X_val_cv), columns=X_val_cv.columns, index=X_val_cv.index)
         
-        model_cv = model_builder(**params)
+        model_cv = model_builder(**constructor_cv_params) 
         
-        fit_params = {}
+        current_fold_fit_params = fit_cv_params.copy() 
         if model_type == 'xgboost_classifier':
-            fit_params['eval_set'] = [(X_val_cv_processed, y_val_cv)]
-            fit_params['early_stopping_rounds'] = trial.suggest_int('early_stopping_rounds', 10, 50)
-            fit_params['verbose'] = False
-        
-        model_cv.fit(X_train_cv_processed, y_train_cv, **fit_params)
+            current_fold_fit_params['eval_set'] = [(X_val_cv_processed, y_val_cv)]
+            # Note: early_stopping_rounds est maintenant passé via le constructeur
+            # Retirer les paramètres de callbacks de current_fold_fit_params s'ils y sont par erreur
+            current_fold_fit_params.pop('callbacks', None) 
+            
+        model_cv.fit(X_train_cv_processed, y_train_cv, **current_fold_fit_params)
         
         if hasattr(model_cv, 'predict_proba'):
             probabilities_cv = model_cv.predict_proba(X_val_cv_processed)
             if probabilities_cv.shape[1] == 2:
                  probabilities_cv = probabilities_cv[:, 1]
-            else:
-                 score = 0.0
+            else: 
+                 score = 0.0 
                  scores.append(score)
-                 continue
+                 continue 
         else: 
             predictions_cv = model_cv.predict(X_val_cv_processed)
-            score = -mean_squared_error(y_val_cv, predictions_cv)
+            score = -mean_squared_error(y_val_cv, predictions_cv) 
             scores.append(score)
             continue
 
         try:
-            if y_val_cv.nunique() > 1:
+            if y_val_cv.nunique() > 1: 
                 score = roc_auc_score(y_val_cv, probabilities_cv)
             else:
                 score = 0.0 
-        except ValueError:
+        except ValueError: 
             score = 0.0
         scores.append(score)
         trial.report(score, fold)
@@ -658,8 +814,8 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         'quantile_regression': {'loss': 'quantile'},
         'bidirectional_lstm': {'activation': 'sigmoid', 'output_units': 1, 'dropout_rate': 0.2, 'l1_reg': 0.0, 'l2_reg': 0.0},
         'temporal_cnn': {'activation': 'sigmoid', 'output_units': 1, 'dropout_rate': 0.2, 'l1_reg': 0.0, 'l2_reg': 0.0},
-        'gaussian_process_regressor': {}, # Les params sont souvent dans le noyau
-        'hierarchical_bayesian': {} # Les params sont spécifiques au modèle défini
+        'gaussian_process_regressor': {'num_features': X_train_final.shape[1]}, # num_features est crucial
+        'hierarchical_bayesian': {'num_features': X_train_final.shape[1]} # num_features peut être utile
     }
     
     current_constructor_params = default_params_structure.get(model_type, {}).copy()
@@ -677,10 +833,10 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
     current_constructor_params.update(temp_params) # Met à jour les defaults avec le résultat
 
     # Gestion spécifique de l'early stopping pour XGBoost pour l'entraînement final
-    # Si 'early_stopping_rounds' est dans les meilleurs paramètres d'Optuna, on le garde pour le fit final.
-    # Sinon, on vérifie s'il était dans les model_params originaux.
-    final_fit_early_stopping_rounds = best_params_from_optuna.get('early_stopping_rounds')
-    if final_fit_early_stopping_rounds is None: # S'il n'a pas été optimisé par Optuna
+    # Si 'early_stopping_rounds_cv' (nom unique utilisé dans Optuna) est dans les meilleurs paramètres d'Optuna, on le garde pour le fit final.
+    # Sinon, on vérifie s'il était dans les model_params originaux sous le nom 'early_stopping_rounds'.
+    final_fit_early_stopping_rounds = best_params_from_optuna.pop('early_stopping_rounds_cv', None) 
+    if final_fit_early_stopping_rounds is None: 
         final_fit_early_stopping_rounds = model_params.get('early_stopping_rounds')
 
 
@@ -715,8 +871,8 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         'optimize_hyperparameters', 'optuna_n_trials', 'optuna_direction', 'optuna_cv_splits'
     ]
     
-    # On retire 'early_stopping_rounds' des constructor_params car il est pour le .fit()
-    constructor_params = {k: v for k, v in current_constructor_params.items() if k not in keys_to_remove_for_constructor and k != 'early_stopping_rounds'}
+    # On retire certaines clés des constructor_params car elles ne sont pas pour le constructeur du modèle sklearn
+    constructor_params = {k: v for k, v in current_constructor_params.items() if k not in keys_to_remove_for_constructor}
 
 
     if current_constructor_params.get('feature_groups') and model_type == 'elastic_net':
@@ -731,16 +887,37 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
     # Pour les modèles NN, s'assurer que input_shape est fourni si nécessaire
     # X_train_processed est un DataFrame pandas. Les modèles NN attendent souvent des arrays numpy.
     # Et pour LSTM/CNN, souvent une forme 3D (samples, timesteps, features)
-    # Ceci est une simplification; une préparation de données plus robuste serait nécessaire.
     if model_type in ['bidirectional_lstm', 'temporal_cnn']:
         if 'input_shape' not in constructor_params:
-            # Suppose (timesteps=1, num_features) pour l'instant si non spécifié
-            # Idéalement, cela devrait être géré par une fonction de préparation de données spécifique aux séquences
-            constructor_params['input_shape'] = (1, X_train_processed.shape[1]) # (timesteps, features)
-            print(f"Avertissement: 'input_shape' non fourni pour {model_type}, utilisation de {constructor_params['input_shape']}. Adapter les données en conséquence.")
-        # Les données X_train_processed et X_test_processed devront peut-être être remodelées en 3D.
-        # Exemple: X_train_nn = X_train_processed.values.reshape((X_train_processed.shape[0], constructor_params['input_shape'][0], constructor_params['input_shape'][1]))
-        # Pour l'instant, les modèles placeholder ne l'utilisent pas activement.
+            # Suppose (timesteps=1, num_features) pour l'instant si non spécifié.
+            # Une vraie implémentation nécessiterait une préparation de données séquentielles dédiée.
+            num_features_for_shape = X_train_processed.shape[1] # X_train_processed est un DataFrame ici
+            default_timesteps = constructor_params.get('timesteps', 1) # Permet de spécifier 'timesteps' dans model_params
+            constructor_params['input_shape'] = (default_timesteps, num_features_for_shape)
+            print(f"Avertissement/Info: 'input_shape' pour {model_type} est {constructor_params['input_shape']}. Si timesteps > 1, les données seront remodelées.")
+        # Les données X_train_processed et X_test_processed devront être remodelées en 3D si timesteps > 1.
+        # Cette logique de remodelage sera dans la section fit.
+    elif model_type == 'gaussian_process_regressor':
+        # S'assurer que num_features est bien dans constructor_params
+        if 'num_features' not in constructor_params:
+            constructor_params['num_features'] = X_train_final.shape[1]
+        # Passer un échantillon de X_train_final pour l'initialisation des points induisants
+        # Ceci est géré par le fait que _build_model est appelé dans __init__ et peut prendre X_train_sample...
+        # Cependant, _build_model dans GaussianProcessRegressionModel a été modifié pour ne pas prendre X_train_sample directement.
+        # Il retourne maintenant des composants. Le modèle GPflow est construit dans fit.
+        # On peut passer X_train_processed.head() ou similaire si _build_model en a besoin pour Z.
+        # Pour l'instant, _build_model prend X_train_sample_for_inducing_variable, qui n'est pas fourni ici.
+        # On va le passer explicitement si inducing_points_ratio est défini.
+        if constructor_params.get('inducing_points_ratio') and 'X_train_sample_for_inducing_variable' not in constructor_params:
+             constructor_params['X_train_sample_for_inducing_variable'] = X_train_final.head(100) # Un échantillon
+    elif model_type == 'hierarchical_bayesian':
+        if 'num_features' not in constructor_params:
+            constructor_params['num_features'] = X_train_final.shape[1]
+        if 'model_specification_func' not in constructor_params:
+            # Fournir une fonction de spécification par défaut ou lever une erreur
+            # Pour l'instant, on s'attend à ce qu'elle soit dans model_params
+            print(f"Avertissement: 'model_specification_func' non fournie pour HierarchicalBayesianModel. Le fit échouera.")
+
 
     print(f"Construction du modèle final {model_type} avec les paramètres constructeur: {constructor_params}")
     if model_type == 'logistic_regression':
@@ -752,8 +929,8 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
     elif model_type == 'xgboost_classifier':
         if callable(constructor_params.get('objective')):
             print("Utilisation d'une fonction objectif personnalisée pour XGBoost.")
-        eval_metric_val = constructor_params.pop('eval_metric', default_params_structure.get(model_type,{}).get('eval_metric'))
-        if eval_metric_val: constructor_params['eval_metric'] = eval_metric_val
+        # Ne pas ajouter de callbacks au constructeur pour éviter les erreurs
+        # L'early stopping sera géré via les paramètres de fit
         model = xgb.XGBClassifier(**constructor_params)
     elif model_type == 'quantile_regression':
         if 'alpha' not in constructor_params: constructor_params['alpha'] = 0.5
@@ -761,58 +938,67 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         model = GradientBoostingRegressor(**constructor_params)
     elif model_type == 'bidirectional_lstm':
         # Assurer que X_train_processed est au format attendu (ex: numpy array, potentiellement 3D)
-        # X_train_nn = X_train_processed.values.reshape((X_train_processed.shape[0], constructor_params['input_shape'][0], constructor_params['input_shape'][1]))
         model = BidirectionalLSTMModel(**constructor_params)
     elif model_type == 'temporal_cnn':
-        # X_train_nn = X_train_processed.values.reshape((X_train_processed.shape[0], constructor_params['input_shape'][0], constructor_params['input_shape'][1]))
         model = TemporalCNNModel(**constructor_params)
     elif model_type == 'gaussian_process_regressor':
-        # GP peut nécessiter la forme de X_train pour l'initialisation du noyau si non spécifié autrement
-        constructor_params['X_train_shape'] = X_train_processed.shape
+        # X_train_sample_for_inducing_variable est retiré car _build_model est appelé dans __init__
+        # et le vrai modèle est construit dans fit.
+        # num_features est déjà dans constructor_params grâce à default_params_structure
+        temp_inducing_sample = constructor_params.pop('X_train_sample_for_inducing_variable', None)
         model = GaussianProcessRegressionModel(**constructor_params)
+        # Le modèle GPflow réel est construit dans model.fit(), qui a accès à X_fit_data
+        # Si temp_inducing_sample a été fourni, il pourrait être passé à fit via fit_final_args
+        if temp_inducing_sample is not None and model.inducing_points_ratio:
+            fit_final_args['X_train_sample_for_inducing_variable'] = temp_inducing_sample
+
     elif model_type == 'hierarchical_bayesian':
+        # model_specification_func et num_features sont attendus dans constructor_params
         model = HierarchicalBayesianModelPlaceholder(**constructor_params)
     else:
         raise ValueError(f"Type de modèle non supporté : {model_type}.")
 
     print(f"Entraînement du modèle final {model_type} sur {len(X_train_processed)} échantillons.")
     fit_final_args = {}
-    # Les modèles NN et Bayésiens peuvent avoir des paramètres de fit différents (ex: epochs, batch_size)
-    # Ceux-ci devraient être passés via model_params et extraits ici si nécessaire.
-    # Pour l'instant, les méthodes fit des placeholders sont simples.
     
-    # Préparation des données pour les modèles NN (exemple simple, à améliorer)
-    X_fit_data = X_train_processed
-    y_fit_data = y_train_final
-    X_test_data_eval = X_test_processed
+    # Préparation des données pour le fit (conversion en numpy, remodelage)
+    X_fit_data = X_train_processed.values if isinstance(X_train_processed, pd.DataFrame) else X_train_processed
+    y_fit_data = y_train_final.values if isinstance(y_train_final, pd.Series) else y_train_final
+    X_test_data_eval = X_test_processed.values if isinstance(X_test_processed, pd.DataFrame) else X_test_processed
+    y_test_data_eval = y_test_final.values if isinstance(y_test_final, pd.Series) else y_test_final
+
 
     # Gestion de l'early stopping pour XGBoost lors du fit final
     if model_type == 'xgboost_classifier' and final_fit_early_stopping_rounds is not None:
-        if isinstance(X_test_processed, pd.DataFrame) and not y_test_final.empty and X_test_data_eval is not None and len(X_test_data_eval) > 0: # Ajout vérification X_test_data_eval
-            fit_final_args['eval_set'] = [(X_test_data_eval, y_test_final)] # Utiliser le vrai test set pour early stopping final
-            fit_final_args['early_stopping_rounds'] = final_fit_early_stopping_rounds
-            # fit_final_args['verbose'] = False # Déjà géré dans _objective_optuna et peut être redondant ici
-            print(f"  Utilisation pour fit XGBoost final: early_stopping_rounds={final_fit_early_stopping_rounds} sur le jeu de test final.")
+        # Pour XGBoost v3.0.2+, l'early stopping doit être passé au constructeur
+        if final_fit_early_stopping_rounds not in constructor_params:
+            constructor_params['early_stopping_rounds'] = final_fit_early_stopping_rounds
+        if X_test_data_eval is not None and len(X_test_data_eval) > 0 and y_test_data_eval is not None and len(y_test_data_eval) > 0 :
+            fit_final_args['eval_set'] = [(X_test_data_eval, y_test_data_eval)]
+            print(f"  Utilisation pour fit XGBoost final: eval_set sur le jeu de test avec early_stopping_rounds={final_fit_early_stopping_rounds} via constructeur.")
         else:
-            print("Avertissement: Early stopping pour XGBoost final non appliqué car X_test_processed/y_test_final n'est pas prêt ou vide.")
+            print("Avertissement: Early stopping pour XGBoost final non appliqué car les données de test ne sont pas prêtes ou vides.")
 
-
-    if model_type in ['bidirectional_lstm', 'temporal_cnn']:
-        # Supposons que les données doivent être des numpy arrays et potentiellement remodelées
-        if isinstance(X_train_processed, pd.DataFrame): X_fit_data = X_train_processed.values
-        if isinstance(y_train_final, pd.Series): y_fit_data = y_train_final.values
-        if isinstance(X_test_processed, pd.DataFrame): X_test_data_eval = X_test_processed.values
-        
-        # Remodelage si input_shape suggère des timesteps > 1
-        # Ceci est une simplification. Une vraie implémentation nécessiterait une gestion des séquences plus robuste.
-        # et que constructor_params['input_shape'] est bien (timesteps, features)
-        if constructor_params.get('input_shape') and len(constructor_params['input_shape']) == 2 :
-            timesteps, num_features = constructor_params['input_shape']
-            if timesteps > 0 : # S'assurer que timesteps est défini et > 0
-                 if X_fit_data is not None:
+    elif model_type in ['bidirectional_lstm', 'temporal_cnn']:
+        input_shape_for_fit = constructor_params.get('input_shape')
+        if input_shape_for_fit and len(input_shape_for_fit) == 2:
+            timesteps, num_features = input_shape_for_fit
+            if timesteps > 0 and X_fit_data.shape[1] == num_features: # Vérifie si le nombre de features correspond avant reshape
+                try:
                     X_fit_data = X_fit_data.reshape((X_fit_data.shape[0], timesteps, num_features))
-                 if X_test_data_eval is not None:
-                    X_test_data_eval = X_test_data_eval.reshape((X_test_data_eval.shape[0], timesteps, num_features))
+                    if X_test_data_eval is not None and X_test_data_eval.shape[1] == num_features:
+                        X_test_data_eval = X_test_data_eval.reshape((X_test_data_eval.shape[0], timesteps, num_features))
+                    elif X_test_data_eval is not None:
+                         print(f"Avertissement: X_test_data_eval n'a pas le bon nombre de features ({X_test_data_eval.shape[1]} vs {num_features}) pour le remodelage NN. Validation_data ne sera pas utilisé.")
+                         X_test_data_eval = None # Invalider pour validation_data
+                except ValueError as e:
+                    print(f"Erreur de remodelage pour {model_type}: {e}. Vérifier 'input_shape' et les données.")
+                    # Ne pas continuer avec un fit qui échouerait probablement
+                    return {'error': f"Erreur de remodelage des données pour {model_type}"}
+
+            elif timesteps > 0 :
+                 print(f"Avertissement: Nombre de features ({X_fit_data.shape[1]}) ne correspond pas à input_shape ({num_features}) pour {model_type}. Remodelage ignoré.")
+
 
         fit_epochs = current_constructor_params.get('epochs', model_params.get('epochs', 10))
         fit_batch_size = current_constructor_params.get('batch_size', model_params.get('batch_size', 32))
@@ -821,30 +1007,25 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         fit_final_args.update({'epochs': fit_epochs, 'batch_size': fit_batch_size})
         print(f"  Utilisation pour fit NN: epochs={fit_epochs}, batch_size={fit_batch_size}")
         
-        if fit_early_stopping_patience and not y_test_final.empty and X_test_data_eval is not None and len(X_test_data_eval) > 0 :
-             fit_final_args['validation_data'] = (X_test_data_eval, y_test_final)
+        if fit_early_stopping_patience and X_test_data_eval is not None and y_test_data_eval is not None and len(X_test_data_eval) > 0 and len(y_test_data_eval) > 0:
+             fit_final_args['validation_data'] = (X_test_data_eval, y_test_data_eval)
              fit_final_args['early_stopping_patience'] = fit_early_stopping_patience
              print(f"  Early stopping pour NN (placeholder) avec patience {fit_early_stopping_patience} sur le jeu de test final.")
         elif fit_early_stopping_patience:
-            print("Avertissement: Early stopping pour NN non appliqué car y_test_final est vide ou X_test_data_eval est vide/None.")
-
+            print("Avertissement: Early stopping pour NN non appliqué car les données de validation ne sont pas prêtes ou vides.")
 
     elif model_type == 'gaussian_process_regressor':
         fit_optimize_restarts = current_constructor_params.get('optimize_restarts', model_params.get('optimize_restarts', 5))
         fit_final_args.update({'optimize_restarts': fit_optimize_restarts})
-        if isinstance(X_train_processed, pd.DataFrame): X_fit_data = X_train_processed.values
-        if isinstance(y_train_final, pd.Series): y_fit_data = y_train_final.values.reshape(-1,1)
-        if isinstance(X_test_processed, pd.DataFrame): X_test_data_eval = X_test_processed.values
-
+        # y_fit_data pour GP doit être (n_samples, 1)
+        if y_fit_data.ndim == 1:
+            y_fit_data = y_fit_data.reshape(-1,1)
 
     elif model_type == 'hierarchical_bayesian':
         fit_draws = current_constructor_params.get('draws', model_params.get('draws', 2000))
         fit_tune = current_constructor_params.get('tune', model_params.get('tune', 1000))
         fit_chains = current_constructor_params.get('chains', model_params.get('chains', 2))
         fit_final_args.update({'draws': fit_draws, 'tune': fit_tune, 'chains': fit_chains})
-        if isinstance(X_train_processed, pd.DataFrame): X_fit_data = X_train_processed.values
-        if isinstance(y_train_final, pd.Series): y_fit_data = y_train_final.values
-        if isinstance(X_test_processed, pd.DataFrame): X_test_data_eval = X_test_processed.values
 
     model.fit(X_fit_data, y_fit_data, sample_weight=final_sample_weights, **fit_final_args)
     
@@ -887,8 +1068,11 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
             'xgboost': xgboost.__version__,
             'pandas': pd.__version__,
             'numpy': np.__version__,
-            'optuna': optuna.__version__
-            # Ajouter d'autres dépendances clés si nécessaire (ex: tensorflow, torch)
+            'optuna': optuna.__version__,
+            'tensorflow': tf.__version__ if 'tf' in globals() else 'N/A',
+            'gpflow': gpflow.__version__ if 'gpflow' in globals() else 'N/A',
+            'pymc': pm.__version__ if 'pm' in globals() else 'N/A',
+            'arviz': az.__version__ if 'az' in globals() else 'N/A'
         }
     }
     
@@ -901,87 +1085,105 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         print(f"Note: Pour les modèles Keras, utiliser model.model.save() est préférable. Joblib est utilisé pour la structure ici.")
     joblib.dump(model_data, model_path)
 
-    results = {} # Renommé metrics en results pour inclure plus que les métriques
-    # Ajuster la section des métriques pour les nouveaux modèles
-    if is_sklearn_classifier_type or (model_type in ['bidirectional_lstm', 'temporal_cnn'] and model.activation == 'sigmoid'): # NN classifier
-        # Utiliser X_test_data_eval qui est potentiellement un numpy array
-        predictions_raw = model.predict(X_test_data_eval)
+    results = {} 
+    
+    # Utiliser y_test_data_eval (numpy array) pour les métriques
+    # S'assurer que X_test_data_eval est prêt pour la prédiction (ex: remodelé pour NN)
+    # La variable X_test_data_eval a déjà été potentiellement remodelée pour les NN plus haut.
+    # Si le remodelage a échoué (ex: X_test_data_eval mis à None), les prédictions/métriques ne seront pas calculées.
+
+    if X_test_data_eval is None and model_type in ['bidirectional_lstm', 'temporal_cnn']:
+        print(f"Avertissement: X_test_data_eval est None pour {model_type}, impossible de calculer les métriques de test.")
+    elif y_test_data_eval is not None and len(y_test_data_eval) > 0 : # S'assurer qu'on a des données de test pour évaluer
+        is_classifier_model = is_sklearn_classifier_type or \
+                              (model_type in ['bidirectional_lstm', 'temporal_cnn'] and model.activation == 'sigmoid')
         
-        probabilities = None
-        if hasattr(model, 'predict_proba'):
-            proba_output = model.predict_proba(X_test_data_eval)
-            if isinstance(proba_output, tuple):
-                 print(f"predict_proba pour {model_type} a retourné un tuple, non utilisé pour AUC/classification binaire direct.")
-            elif proba_output.ndim == 2 and proba_output.shape[1] == 2:
-                probabilities = proba_output[:, 1]
-            elif proba_output.ndim == 1:
-                probabilities = proba_output
-            else:
-                print(f"Sortie de predict_proba pour {model_type} non standard pour AUC binaire, shape: {proba_output.shape}")
-        elif model_type in ['bidirectional_lstm', 'temporal_cnn'] and model.activation == 'sigmoid' and model.output_units == 1:
-             # Si predict_proba n'est pas là mais c'est un classifieur binaire NN, predict() donne les probas
-             probabilities = predictions_raw.ravel() if predictions_raw.ndim > 1 else predictions_raw
+        if is_classifier_model:
+            predictions_raw_test = model.predict(X_test_data_eval) # Peut être des classes ou des probas brutes pour NN
+            
+            probabilities_test = None
+            if hasattr(model, 'predict_proba'):
+                proba_output_test = model.predict_proba(X_test_data_eval)
+                if isinstance(proba_output_test, tuple): # Ex: GP
+                    print(f"predict_proba pour {model_type} (test) a retourné un tuple.")
+                elif proba_output_test.ndim == 2 and proba_output_test.shape[1] == 2: # Classifieur binaire std
+                    probabilities_test = proba_output_test[:, 1]
+                elif proba_output_test.ndim == 1: # Déjà proba classe positive
+                    probabilities_test = proba_output_test
+                else: # Cas non standard (ex: multiclasse où predict_proba retourne (N, C))
+                    probabilities_test = proba_output_test # Garder tel quel pour log_loss multiclasse
+            elif model_type in ['bidirectional_lstm', 'temporal_cnn'] and model.activation == 'sigmoid' and model.output_units == 1:
+                 probabilities_test = predictions_raw_test.ravel() if predictions_raw_test.ndim > 1 else predictions_raw_test
+
+            # Conversion en classes pour accuracy, classification_report
+            # y_test_data_eval est déjà un array numpy
+            if probabilities_test is not None and probabilities_test.ndim == 1 and (y_test_data_eval.dtype == 'int' or pd.Series(y_test_data_eval).nunique() <=2) :
+                 predictions_classes_test = (probabilities_test > 0.5).astype(int)
+            elif predictions_raw_test.ndim == 2 and predictions_raw_test.shape[1] > 1 and (y_test_data_eval.dtype == 'int' or pd.Series(y_test_data_eval).nunique() > 2): # Cas multiclasse
+                 predictions_classes_test = np.argmax(predictions_raw_test, axis=1)
+            elif predictions_raw_test.ndim == 1 and (y_test_data_eval.dtype == 'int' or pd.Series(y_test_data_eval).nunique() <=2): # Cas binaire où predict retourne déjà des classes
+                 predictions_classes_test = predictions_raw_test.astype(int)
+            else: 
+                 predictions_classes_test = predictions_raw_test # Fallback
+
+            if len(y_test_data_eval) == len(predictions_classes_test):
+                results['accuracy'] = accuracy_score(y_test_data_eval, predictions_classes_test)
+                print(f"Modèle '{model_type}' entraîné et sauvegardé dans '{model_path}'.")
+                print(f"Accuracy (test final): {results['accuracy']:.4f}")
+                try:
+                    results['classification_report'] = classification_report(y_test_data_eval, predictions_classes_test, output_dict=True, zero_division=0)
+                    print("\nRapport de classification (test final):")
+                    print(classification_report(y_test_data_eval, predictions_classes_test, zero_division=0))
+                except ValueError as e_cls_report:
+                     print(f"Erreur rapport de classification: {e_cls_report}")
 
 
-        # Conversion des prédictions en classes
-        if probabilities is not None and (y_test_final.dtype == 'int' or y_test_final.nunique() <=2) :
-             predictions_classes = (probabilities > 0.5).astype(int)
-        elif predictions_raw.ndim == 2 and predictions_raw.shape[1] > 1 and (y_test_final.dtype == 'int' or y_test_final.nunique() <=2): # Cas multiclasse
-             predictions_classes = np.argmax(predictions_raw, axis=1)
-        elif predictions_raw.ndim == 1 and (y_test_final.dtype == 'int' or y_test_final.nunique() <=2): # Cas binaire où predict retourne déjà des classes
-             predictions_classes = predictions_raw.astype(int)
-        else: # Fallback ou cas de régression traité ailleurs
-             predictions_classes = predictions_raw
+            if probabilities_test is not None:
+                try:
+                    # Pour AUC, y_test_data_eval doit être binaire, probabilities_test les scores de la classe positive
+                    # Pour multiclasse, probabilities_test est (N, C) et multi_class='ovr' ou 'ovo'
+                    if pd.Series(y_test_data_eval).nunique() <= 2: 
+                        if probabilities_test.ndim == 2 and probabilities_test.shape[1] == 2: # (N,2) -> prendre proba classe 1
+                             auc_probs = probabilities_test[:,1]
+                        elif probabilities_test.ndim == 1: # (N,) -> proba classe 1
+                             auc_probs = probabilities_test
+                        else: auc_probs = None
 
+                        if auc_probs is not None and len(y_test_data_eval) == len(auc_probs):
+                             results['auc'] = roc_auc_score(y_test_data_eval, auc_probs)
+                             print(f"AUC Score (test final): {results['auc']:.4f}")
+                        else: print("AUC non calculé (probas non adaptées ou problème de longueur).")
 
-        results['accuracy'] = accuracy_score(y_test_final, predictions_classes)
-        print(f"Modèle '{model_type}' entraîné et sauvegardé dans '{model_path}'.")
-        print(f"Accuracy (test final): {results['accuracy']:.4f}")
-        
-        if probabilities is not None:
-            try:
-                if y_test_final.nunique() <= 2: # Assure que la cible est binaire pour AUC
-                    results['auc'] = roc_auc_score(y_test_final, probabilities)
-                    print(f"AUC Score (test final): {results['auc']:.4f}")
-                else:
-                    print("AUC non calculé car la cible n'est pas binaire.")
+                    elif probabilities_test.ndim == 2 and probabilities_test.shape[1] > 2 and probabilities_test.shape[0] == len(y_test_data_eval): # Multiclasse
+                        results['auc'] = roc_auc_score(y_test_data_eval, probabilities_test, multi_class='ovr')
+                        print(f"AUC Score (test final, multiclasse OVR): {results['auc']:.4f}")
+                    else:
+                        print("AUC non calculé (cible non binaire ou probas non adaptées).")
+                        results['auc'] = None
+                except ValueError as e_auc:
+                    print(f"Impossible de calculer l'AUC (test final): {e_auc}")
                     results['auc'] = None
-            except ValueError as e:
-                print(f"Impossible de calculer l'AUC (test final): {e}")
-                results['auc'] = None
-        results['classification_report'] = classification_report(y_test_final, predictions_classes, output_dict=True, zero_division=0)
-        print("\nRapport de classification (test final):")
-        print(classification_report(y_test_final, predictions_classes, zero_division=0))
+            
+        elif model_type in ['quantile_regression', 'gaussian_process_regressor'] or \
+             (model_type in ['bidirectional_lstm', 'temporal_cnn', 'hierarchical_bayesian'] and model.activation != 'sigmoid'): # Modèles de régression
+            
+            predictions_test = model.predict(X_test_data_eval) # Moyenne pour GP, HBM
+            if predictions_test.ndim > 1 and predictions_test.shape[1] == 1:
+                predictions_test = predictions_test.ravel()
 
-    elif model_type == 'quantile_regression':
-        predictions = model.predict(X_test_data_eval)
-        results['mse'] = mean_squared_error(y_test_final, predictions)
-        print(f"Modèle '{model_type}' (quantile: {model.alpha if hasattr(model, 'alpha') else 'N/A'}) sauvegardé.")
-        print(f"MSE (test final): {results['mse']:.4f}")
-    
-    elif model_type == 'gaussian_process_regressor':
-        predictions_mean = model.predict(X_test_data_eval)
-        if predictions_mean.ndim > 1 and predictions_mean.shape[1] == 1:
-            predictions_mean = predictions_mean.ravel()
+            if len(y_test_data_eval) == len(predictions_test):
+                results['mse'] = mean_squared_error(y_test_data_eval, predictions_test)
+                print(f"Modèle '{model_type}' entraîné et sauvegardé.")
+                print(f"MSE (test final): {results['mse']:.4f}")
+                if model_type == 'gaussian_process_regressor' and hasattr(model, 'predict_proba'):
+                    _, variance_test = model.predict_proba(X_test_data_eval)
+                    if variance_test is not None:
+                         results['mean_variance'] = np.mean(variance_test)
+                         print(f"Mean Predicted Variance (test final): {results['mean_variance']:.4f}")
+            else:
+                print(f"Avertissement: Longueurs de y_test_data_eval ({len(y_test_data_eval)}) et predictions_test ({len(predictions_test)}) ne correspondent pas. Métriques non calculées.")
 
-        results['mse'] = mean_squared_error(y_test_final, predictions_mean)
-        print(f"Modèle '{model_type}' entraîné et sauvegardé.")
-        print(f"MSE (test final, basé sur la moyenne prédite): {results['mse']:.4f}")
-        # if hasattr(model.model, 'log_likelihood'): results['log_likelihood'] = model.model.log_likelihood() # Si GPy/GPflow
-    
-    elif model_type == 'hierarchical_bayesian':
-        predictions_mean_hbm = model.predict(X_test_data_eval)
-        if predictions_mean_hbm.ndim > 1 and predictions_mean_hbm.shape[1] == 1:
-            predictions_mean_hbm = predictions_mean_hbm.ravel()
-
-        results['mse'] = mean_squared_error(y_test_final, predictions_mean_hbm)
-        print(f"Modèle '{model_type}' (placeholder) entraîné et sauvegardé.")
-        print(f"MSE (test final, basé sur la prédiction ponctuelle): {results['mse']:.4f}")
-        # results['trace_summary'] = "Placeholder for Arviz summary" # Si PyMC et ArviZ sont utilisés
-    
     results['feature_importances'] = feature_importances_dict
-    # TODO: Ajouter d'autres informations pertinentes au retour si nécessaire (ex: rapport d'anomalie)
-
     return results
 
 
@@ -1048,69 +1250,88 @@ def load_model_and_predict(X_new: pd.DataFrame, model_path: str = 'models_store/
     training_constructor_params = model_data.get('training_constructor_params', {})
 
 
-    # Préparation des données pour les modèles NN (similaire à train_model)
+    # Préparation des données pour la prédiction (conversion en numpy, remodelage)
+    X_predict_data = X_scaled.values if isinstance(X_scaled, pd.DataFrame) else X_scaled
+    
+    model_type = model_data.get('model_type')
+    training_constructor_params = model_data.get('training_constructor_params', {})
+
     if model_type in ['bidirectional_lstm', 'temporal_cnn']:
-        if isinstance(X_scaled, pd.DataFrame):
-            X_predict_data = X_scaled.values
-        
         input_shape_from_train = training_constructor_params.get('input_shape')
-        if input_shape_from_train and len(input_shape_from_train) == 2 :
+        if input_shape_from_train and len(input_shape_from_train) == 2:
             timesteps, num_features = input_shape_from_train
-            if timesteps > 0 and X_predict_data.shape[1] == num_features : # S'assurer que le nombre de features correspond
-                 X_predict_data = X_predict_data.reshape((X_predict_data.shape[0], timesteps, num_features))
-            elif timesteps > 0 and X_predict_data.shape[1] != num_features:
-                 print(f"Avertissement: Incohérence de features pour NN. Attendu {num_features}, obtenu {X_predict_data.shape[1]}. Remodelage peut échouer.")
-                 # Tenter le remodelage quand même, mais cela risque d'échouer si le nombre total d'éléments ne correspond pas.
-                 # Une meilleure gestion des erreurs ou une validation plus stricte serait nécessaire ici.
-                 try:
-                     X_predict_data = X_predict_data.reshape((X_predict_data.shape[0], timesteps, num_features))
-                 except ValueError as reshape_error:
-                     raise ValueError(f"Erreur de remodelage pour NN: {reshape_error}. Vérifiez input_shape et les données d'entrée.") from reshape_error
-
-
-    elif model_type in ['gaussian_process_regressor', 'hierarchical_bayesian']:
-        if isinstance(X_scaled, pd.DataFrame):
-            X_predict_data = X_scaled.values
+            if timesteps > 0 and X_predict_data.ndim == 2 and X_predict_data.shape[1] == num_features:
+                try:
+                    X_predict_data = X_predict_data.reshape((X_predict_data.shape[0], timesteps, num_features))
+                except ValueError as reshape_error:
+                    raise ValueError(f"Erreur de remodelage pour {model_type} lors de la prédiction: {reshape_error}. Attendu {num_features} features, obtenu {X_predict_data.shape[1]} avant remodelage pour {timesteps} timesteps.") from reshape_error
+            elif timesteps > 0:
+                 raise ValueError(f"Incohérence de features ou de dimensions pour {model_type}. Attendu {num_features} features pour {timesteps} timesteps, X_predict_data a shape {X_predict_data.shape}. Remodelage impossible.")
 
     # Gestion de la prédiction et de l'incertitude
     predictions: np.ndarray
     uncertainty: Optional[np.ndarray] = None
 
-    if hasattr(model, 'predict_proba'):
+    if return_probabilities and hasattr(model, 'predict_proba'):
         proba_output = model.predict_proba(X_predict_data)
         
         if model_type == 'gaussian_process_regressor' and isinstance(proba_output, tuple) and len(proba_output) == 2:
-            # GP retourne (moyenne, variance) via predict_proba placeholder
-            predictions = proba_output[0].ravel() # Moyenne
+            predictions = proba_output[0] # Moyenne
+            if predictions.ndim > 1 and predictions.shape[1] == 1: predictions = predictions.ravel()
+            
+            raw_variance = proba_output[1] # Variance
+            if raw_variance.ndim > 1 and raw_variance.shape[1] == 1: raw_variance = raw_variance.ravel()
+            
+            if return_uncertainty: # Variance retournée par GPR, prendre sqrt pour std dev
+                uncertainty = np.sqrt(np.maximum(0, raw_variance)) # Assurer non-négatif avant sqrt
+            # Si return_probabilities=True pour un régresseur GP, 'predictions' est la moyenne.
+            # Si return_probabilities=False, 'predictions' est aussi la moyenne (pas de classes ici).
+            # Donc, la logique de conversion en classes plus bas ne s'appliquera pas.
+
+        elif model_type == 'hierarchical_bayesian' and proba_output.ndim == 2 and proba_output.shape[0] == len(X_predict_data):
+            # HBM placeholder retourne des échantillons (N_samples_X, N_mcmc_samples)
+            predictions = np.mean(proba_output, axis=1) # Moyenne des échantillons MCMC
             if return_uncertainty:
-                uncertainty = np.sqrt(proba_output[1].ravel()) # Écart-type comme incertitude
-        elif model_type == 'hierarchical_bayesian' and proba_output.ndim == 2 and proba_output.shape[1] > 1:
-            # HBM placeholder retourne des échantillons. On prend la moyenne comme prédiction.
-            predictions = np.mean(proba_output, axis=1)
-            if return_uncertainty:
-                uncertainty = np.std(proba_output, axis=1) # Écart-type des échantillons comme incertitude
-        elif proba_output.ndim == 2 and proba_output.shape[1] == 2: # Cas classifieur binaire standard
+                uncertainty = np.std(proba_output, axis=1) # Écart-type des échantillons MCMC
+            # Idem, la logique de conversion en classes ne s'appliquera pas.
+
+        elif proba_output.ndim == 2 and proba_output.shape[1] == 2: # Classifieur binaire standard
             predictions = proba_output[:, 1] # Proba de la classe 1
         elif proba_output.ndim == 1: # Supposé probas classe positive déjà
             predictions = proba_output
-        else: # Cas non standard
-            print(f"Avertissement: Sortie de predict_proba pour {model_type} de forme {proba_output.shape}. Utilisation directe.")
-            predictions = proba_output # Peut être multidimensionnel
+        else: # Cas non standard (ex: multiclasse où predict_proba retourne (N, C))
+            predictions = proba_output 
+            # Pour multiclasse, si on veut la classe prédite, il faudrait argmax, mais ici on retourne les probas.
+            # Si return_probabilities=False, la conversion en classe se fait plus bas.
 
     elif model_type in ['bidirectional_lstm', 'temporal_cnn'] and \
          training_constructor_params.get('activation') == 'sigmoid' and \
-         training_constructor_params.get('output_units') == 1:
+         training_constructor_params.get('output_units') == 1 and \
+         return_probabilities:
         # Classifieur binaire NN, predict() donne les probas
-        predictions = model.predict(X_predict_data).ravel()
-    else: # Modèles de régression ou classifieurs sans predict_proba clair
+        predictions = model.predict(X_predict_data)
+        if predictions.ndim > 1 and predictions.shape[1] == 1 : predictions = predictions.ravel()
+
+    else: # Prédictions directes (classes pour classifieurs, valeurs pour régresseurs)
         predictions = model.predict(X_predict_data)
         if predictions.ndim > 1 and predictions.shape[1] == 1: # S'assurer que c'est 1D pour la régression simple
             predictions = predictions.ravel()
 
-    if not return_probabilities and (model_type in ['logistic_regression', 'random_forest', 'xgboost_classifier'] or \
-                                   (model_type in ['bidirectional_lstm', 'temporal_cnn'] and training_constructor_params.get('activation') == 'sigmoid')):
-        # Convertir les probabilités en classes si return_probabilities est False pour les classifieurs
-        predictions = (predictions > 0.5).astype(int)
+    # Conversion en classes si return_probabilities est False pour les classifieurs
+    is_classifier_outputting_probs = (model_type in ['logistic_regression', 'random_forest', 'xgboost_classifier'] or \
+                                   (model_type in ['bidirectional_lstm', 'temporal_cnn'] and \
+                                    training_constructor_params.get('activation') == 'sigmoid' and \
+                                    training_constructor_params.get('output_units') == 1))
+    
+    if not return_probabilities and is_classifier_outputting_probs:
+        # Si 'predictions' contient des probabilités (0 à 1), convertir en classes 0/1
+        # Cela suppose une classification binaire avec seuil 0.5
+        # Pour multiclasse, si 'predictions' est (N,C) de probas, il faudrait np.argmax(predictions, axis=1)
+        if predictions.ndim == 1 : # Probas binaires
+            predictions = (predictions > 0.5).astype(int)
+        elif predictions.ndim == 2 and predictions.shape[1] > 1 : # Probas multiclasse
+            predictions = np.argmax(predictions, axis=1)
+
 
     if return_uncertainty:
         return predictions, uncertainty

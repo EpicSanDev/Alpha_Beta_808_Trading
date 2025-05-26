@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
-from typing import Tuple
+from typing import Tuple, List, Optional # Ajout de List et Optional
 
 # Placeholder pour les futures importations de bibliothèques spécifiques (ex: pour le block bootstrap)
 
-def a_ajouter_bruit_calibre(X: pd.DataFrame, noise_level: float = 0.01, random_state: Optional[int] = None) -> pd.DataFrame:
+def ajouter_bruit_calibre(X: pd.DataFrame, noise_level: float = 0.01, random_state: Optional[int] = None) -> pd.DataFrame:
     """
     Ajoute un bruit gaussien calibré aux features.
 
@@ -27,10 +27,11 @@ def a_ajouter_bruit_calibre(X: pd.DataFrame, noise_level: float = 0.01, random_s
             X_bruite[col] += noise
     return X_bruite
 
-def a_bootstrap_temporel_blocs(X: pd.DataFrame, y: pd.Series, block_size: int, n_bootstrap_samples: int, random_state: Optional[int] = None) -> Tuple[List[pd.DataFrame], List[pd.Series]]:
+def bootstrap_temporel_blocs(X: pd.DataFrame, y: pd.Series, block_size: int, n_bootstrap_samples: int, random_state: Optional[int] = None) -> Tuple[List[pd.DataFrame], List[pd.Series]]:
     """
     Esquisse pour une technique de bootstrap temporel par blocs.
-    Cette fonction est un placeholder et nécessiterait une implémentation plus robuste.
+    Cette fonction est une esquisse et nécessiterait une implémentation plus complète et validée.
+    Elle est conservée pour illustrer le concept mais n'est pas recommandée pour une utilisation en production sans validation.
 
     Args:
         X (pd.DataFrame): DataFrame des features.
@@ -115,13 +116,13 @@ if __name__ == '__main__':
     y_sample = dummy_df['target']
 
     print("--- Test d'ajout de bruit calibré ---")
-    X_bruite_sample = a_ajouter_bruit_calibre(X_sample.copy(), noise_level=0.05, random_state=42)
+    X_bruite_sample = ajouter_bruit_calibre(X_sample.copy(), noise_level=0.05, random_state=42)
     print("X original (5 premières lignes):\n", X_sample.head())
     print("\nX bruité (5 premières lignes):\n", X_bruite_sample.head())
 
     print("\n--- Test du placeholder de Bootstrap Temporel par Blocs ---")
     try:
-        boot_X, boot_y = a_bootstrap_temporel_blocs(X_sample.copy(), y_sample.copy(), block_size=10, n_bootstrap_samples=3, random_state=42)
+        boot_X, boot_y = bootstrap_temporel_blocs(X_sample.copy(), y_sample.copy(), block_size=10, n_bootstrap_samples=3, random_state=42)
         if boot_X and boot_y:
             print(f"Généré {len(boot_X)} échantillons bootstrap.")
             print("Premier échantillon X bootstrap (5 premières lignes):\n", boot_X[0].head())

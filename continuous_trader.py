@@ -17,6 +17,7 @@ import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 import json
+import joblib
 
 # Ajout du répertoire src au sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
@@ -116,7 +117,34 @@ class ContinuousTrader:
             "testnet": True, # true pour le mode testnet de Binance, false pour production
 
             "model": {
-                "model_path": "models_store/logistic_regression_mvp.joblib",
+                "ensemble_enabled": True,
+                "models": [
+                    {
+                        "name": "logistic_regression",
+                        "path": "models_store/logistic_regression_mvp.joblib",
+                        "weight": 0.3,
+                        "enabled": True
+                    },
+                    {
+                        "name": "elastic_net",
+                        "path": "models_store/test_elasticnet_model.joblib",
+                        "weight": 0.2,
+                        "enabled": True
+                    },
+                    {
+                        "name": "random_forest",
+                        "path": "models_store/test_rf_opt_model.joblib",
+                        "weight": 0.25,
+                        "enabled": True
+                    },
+                    {
+                        "name": "xgboost",
+                        "path": "models_store/test_xgb_opt_model.joblib",
+                        "weight": 0.25,
+                        "enabled": True
+                    }
+                ],
+                "fallback_model": "models_store/logistic_regression_mvp.joblib",
             },
 
             "trading_thresholds": {
@@ -439,19 +467,24 @@ class ContinuousTrader:
     def _calculate_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calcule les features techniques sur les données"""
         try:
-            # Features de base
-            data = calculate_sma(data, column='close', windows=self.config['features']['sma_windows'])
-            data = calculate_ema(data, column='close', windows=self.config['features']['ema_windows'])
-            data = calculate_rsi(data, column='close', window=self.config['features']['rsi_window'])
+            # Features de base - exactement celles attendues par les modèles
+            # Générer toutes les features SMA et EMA requises
+            data = calculate_sma(data, column='close', windows=[10, 20])  # Pour avoir sma_10, sma_20
+            data = calculate_ema(data, column='close', windows=[10, 20])  # Pour avoir ema_10, ema_20
+            data = calculate_rsi(data, column='close', window=14)         # Pour avoir rsi_14
             
-            # Features avancées
-            data = calculate_macd(data, column='close')
-            data = calculate_bollinger_bands(data, column='close')
-            data = calculate_price_momentum(data, column='close', windows=[5, 10])
+            # MACD avec tous les composants
+            data = calculate_macd(data, column='close')  # Pour avoir macd, macd_signal, macd_hist
             
-            # Features de volume si activées
-            if self.config['features']['use_volume_features'] and 'volume' in data.columns:
-                data = calculate_volume_features(data, volume_col='volume', price_col='close')
+            # Bollinger Bands
+            data = calculate_bollinger_bands(data, column='close')  # Pour avoir bb_upper, bb_lower, bb_position
+            
+            # Price momentum avec les fenêtres requises
+            data = calculate_price_momentum(data, column='close', windows=[5, 10])  # Pour avoir momentum_5, volatility_5, momentum_10, volatility_10
+            
+            # Features de volume si activées (toujours activées pour correspondre aux modèles)
+            if 'volume' in data.columns:
+                data = calculate_volume_features(data, volume_col='volume', price_col='close')  # Pour avoir volume_sma_10, volume_ratio_10, volume_sma_20, volume_ratio_20, vwap_10
             
             # Nettoyer les NaN
             data = data.dropna()
@@ -463,32 +496,108 @@ class ContinuousTrader:
             return data
     
     async def _generate_signal(self, data: pd.DataFrame, symbol: str) -> Optional[float]:
-        """Génère un signal de trading basé sur le modèle ML"""
+        """Génère un signal de trading basé sur un ensemble de modèles ML"""
         try:
-            # Préparer les données pour le modèle
-            exclude_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'symbol', 'interval']
-            feature_cols = [col for col in data.columns if col not in exclude_cols]
+            # Calculer la feature 'other_feature' qui manque pour certains modèles
+            if 'other_feature' not in data.columns:
+                data['other_feature'] = (data['close'] - data['close'].shift(5)) / data['close'].shift(5) * 100
+                data = data.dropna()  # Nettoyer les NaN après ajout de other_feature
             
-            if len(feature_cols) == 0:
-                logger.warning(f"Aucune feature disponible pour {symbol}")
-                return None
+            # Système d'ensemble de modèles
+            ensemble_enabled = self.config['model'].get('ensemble_enabled', False)
             
-            # Utiliser seulement la dernière observation
-            X = data[feature_cols].iloc[-1:].copy()
-            
-            # Charger le modèle et faire une prédiction
-            model_path = self.config['model'].get('model_path', 'models_store/logistic_regression_mvp.joblib')
-            if not os.path.exists(model_path):
-                logger.warning(f"Modèle non trouvé: {model_path}")
-                return None
-            
-            prediction = load_model_and_predict(X, model_path=model_path, return_probabilities=True)
-            
-            if prediction is not None and len(prediction) > 0:
-                # Convertir la probabilité en signal (-1 à 1)
-                prob = prediction[0]
-                signal = (prob - 0.5) * 2  # Map [0,1] to [-1,1]
-                return signal
+            if ensemble_enabled and 'models' in self.config['model']:
+                # Utiliser l'ensemble de modèles
+                predictions = []
+                weights = []
+                
+                for model_config in self.config['model']['models']:
+                    if not model_config.get('enabled', True):
+                        continue
+                        
+                    model_path = model_config['path']
+                    model_weight = model_config.get('weight', 1.0)
+                    
+                    if not os.path.exists(model_path):
+                        logger.warning(f"Modèle non trouvé: {model_path} (ignoré)")
+                        continue
+                    
+                    try:
+                        # Charger le modèle pour déterminer les features attendues
+                        import joblib
+                        model_data = joblib.load(model_path)
+                        expected_features = model_data.get('feature_columns', [])
+                        
+                        # Vérifier que toutes les features attendues sont présentes
+                        missing_features = [f for f in expected_features if f not in data.columns]
+                        if missing_features:
+                            logger.error(f"Features manquantes pour {model_config['name']}: {missing_features}")
+                            logger.error(f"Features disponibles: {list(data.columns)}")
+                            continue
+                        
+                        # Utiliser seulement les features attendues par ce modèle et la dernière observation
+                        X = data[expected_features].iloc[-1:].copy()
+                        
+                        logger.debug(f"Features utilisées pour {model_config['name']}: {list(X.columns)}")
+                        
+                        prediction = load_model_and_predict(X, model_path=model_path, return_probabilities=True)
+                        
+                        if prediction is not None and len(prediction) > 0:
+                            predictions.append(prediction[0])
+                            weights.append(model_weight)
+                            logger.debug(f"Prédiction {model_config['name']}: {prediction[0]:.3f}")
+                        
+                    except Exception as e:
+                        logger.error(f"Erreur avec le modèle {model_config['name']}: {e}")
+                        continue
+                
+                if len(predictions) > 0:
+                    # Calculer la prédiction pondérée
+                    weighted_pred = np.average(predictions, weights=weights)
+                    
+                    # Ajouter quelques métriques d'ensemble
+                    std_pred = np.std(predictions) if len(predictions) > 1 else 0.0
+                    min_pred = np.min(predictions)
+                    max_pred = np.max(predictions)
+                    
+                    logger.debug(f"Ensemble pour {symbol}: avg={weighted_pred:.3f}, std={std_pred:.3f}, min={min_pred:.3f}, max={max_pred:.3f}")
+                    
+                    # Convertir la probabilité en signal (-1 à 1)
+                    signal = (weighted_pred - 0.5) * 2  # Map [0,1] to [-1,1]
+                    
+                    # Réduire le signal si la variance est élevée (incertitude)
+                    if std_pred > 0.2:  # Si écart-type > 20%
+                        uncertainty_factor = max(0.5, 1.0 - std_pred)
+                        signal *= uncertainty_factor
+                        logger.debug(f"Signal réduit pour incertitude: {signal:.3f} (facteur: {uncertainty_factor:.3f})")
+                    
+                    return signal
+                else:
+                    logger.warning(f"Aucun modèle n'a pu générer de prédiction pour {symbol}")
+                    # Fallback vers le modèle par défaut
+                    fallback_path = self.config['model'].get('fallback_model', 'models_store/logistic_regression_mvp.joblib')
+                    if os.path.exists(fallback_path):
+                        prediction = load_model_and_predict(X, model_path=fallback_path, return_probabilities=True)
+                        if prediction is not None and len(prediction) > 0:
+                            signal = (prediction[0] - 0.5) * 2
+                            logger.info(f"Utilisation du modèle de fallback pour {symbol}: {signal:.3f}")
+                            return signal
+                    return None
+                    
+            else:
+                # Mode modèle unique (ancien comportement)
+                model_path = self.config['model'].get('model_path', 'models_store/logistic_regression_mvp.joblib')
+                if not os.path.exists(model_path):
+                    logger.warning(f"Modèle non trouvé: {model_path}")
+                    return None
+                
+                prediction = load_model_and_predict(X, model_path=model_path, return_probabilities=True)
+                
+                if prediction is not None and len(prediction) > 0:
+                    # Convertir la probabilité en signal (-1 à 1)
+                    prob = prediction[0]
+                    signal = (prob - 0.5) * 2  # Map [0,1] to [-1,1]
+                    return signal
             
             return None
             
@@ -807,22 +916,135 @@ class ContinuousTrader:
                 price_change_threshold=0.01
             )
             
-            # Réentraîner le modèle
-            model_path = self.config['model'].get('model_path', 'models_store/logistic_regression_mvp.joblib')
-            metrics = train_model(
-                X, y,
-                model_type='logistic_regression', # Pourrait être configurable aussi
-                model_path=model_path,
-                scale_features=True
-            )
+            # Réentraîner les modèles (ensemble ou modèle unique)
+            ensemble_enabled = self.config['model'].get('ensemble_enabled', False)
+            
+            if ensemble_enabled and 'models' in self.config['model']:
+                # Réentraîner tous les modèles de l'ensemble
+                logger.info("🔄 Réentraînement de l'ensemble de modèles...")
+                retrained_models = 0
+                total_accuracy = 0.0
+                
+                for model_config in self.config['model']['models']:
+                    if not model_config.get('enabled', True):
+                        continue
+                        
+                    model_name = model_config['name']
+                    model_path = model_config['path']
+                    model_type = self._get_model_type_from_path(model_path)
+                    
+                    try:
+                        logger.info(f"Réentraînement du modèle {model_name} ({model_type})...")
+                        
+                        # Adapter les paramètres selon le type de modèle
+                        model_params = self._get_model_params_for_type(model_type)
+                        scale_features = model_type in ['logistic_regression', 'elastic_net']
+                        
+                        metrics = train_model(
+                            X, y,
+                            model_type=model_type,
+                            model_params=model_params,
+                            model_path=model_path,
+                            scale_features=scale_features
+                        )
+                        
+                        accuracy = metrics.get('accuracy', 0.0)
+                        total_accuracy += accuracy
+                        retrained_models += 1
+                        
+                        logger.info(f"✅ Modèle {model_name} réentraîné. Accuracy: {accuracy:.3f}")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Erreur lors du réentraînement de {model_name}: {e}")
+                        continue
+                
+                if retrained_models > 0:
+                    avg_accuracy = total_accuracy / retrained_models
+                    logger.info(f"✅ Ensemble réentraîné: {retrained_models} modèles, accuracy moyenne: {avg_accuracy:.3f}")
+                else:
+                    logger.error("❌ Aucun modèle de l'ensemble n'a pu être réentraîné")
+                    
+            else:
+                # Mode modèle unique (comportement original)
+                model_path = self.config['model'].get('model_path', 'models_store/logistic_regression_mvp.joblib')
+                metrics = train_model(
+                    X, y,
+                    model_type='logistic_regression',
+                    model_path=model_path,
+                    scale_features=True
+                )
+                logger.info(f"✅ Modèle unique réentraîné. Accuracy: {metrics.get('accuracy', 'N/A'):.3f}")
             
             self.last_model_update = datetime.now()
             self.stats['last_model_retrain_time'] = self.last_model_update
-            logger.info(f"✅ Modèle réentraîné avec succès. Accuracy: {metrics.get('accuracy', 'N/A'):.3f}")
             
         except Exception as e:
             logger.error(f"Erreur lors du réentraînement du modèle: {e}")
             self.stats['errors'] += 1
+    
+    def _get_model_type_from_path(self, model_path: str) -> str:
+        """Extrait le type de modèle du nom de fichier"""
+        filename = model_path.lower()
+        
+        if 'logistic_regression' in filename or 'logistic' in filename:
+            return 'logistic_regression'
+        elif 'elasticnet' in filename or 'elastic_net' in filename:
+            return 'elastic_net'
+        elif 'random_forest' in filename or 'rf' in filename:
+            return 'random_forest'
+        elif 'xgb' in filename or 'xgboost' in filename:
+            return 'xgboost_classifier'
+        elif 'quantile' in filename:
+            return 'quantile_regression'
+        else:
+            # Fallback par défaut
+            logger.warning(f"Type de modèle non reconnu pour {model_path}, utilisation de logistic_regression par défaut")
+            return 'logistic_regression'
+    
+    def _get_model_params_for_type(self, model_type: str) -> Dict:
+        """Retourne les paramètres appropriés pour chaque type de modèle"""
+        params = {
+            'logistic_regression': {
+                'solver': 'liblinear',
+                'max_iter': 1000,
+                'C': 1.0,
+                'penalty': 'l2'
+            },
+            'elastic_net': {
+                'loss': 'log_loss',
+                'penalty': 'elasticnet',
+                'max_iter': 1000,
+                'tol': 1e-3,
+                'alpha': 0.0001,
+                'l1_ratio': 0.15
+            },
+            'random_forest': {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 5,
+                'min_samples_leaf': 2,
+                'n_jobs': -1,
+                'ccp_alpha': 0.0
+            },
+            'xgboost_classifier': {
+                'objective': 'binary:logistic',
+                'eval_metric': 'logloss',
+                'n_estimators': 100,
+                'max_depth': 6,
+                'learning_rate': 0.1,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8
+            },
+            'quantile_regression': {
+                'loss': 'quantile',
+                'alpha': 0.5,
+                'n_estimators': 100,
+                'max_depth': 6,
+                'learning_rate': 0.1
+            }
+        }
+        
+        return params.get(model_type, {})
     
     async def _performance_monitor(self):
         """Surveille les performances du trading"""
