@@ -131,7 +131,8 @@ def load_binance_klines(
     symbol: str,
     intervals: List[str],
     start_date_str: str,
-    end_date_str: Optional[str] = None
+    end_date_str: Optional[str] = None,
+    testnet: bool = False
 ) -> Dict[str, pd.DataFrame]:
     """
     Charge les données de klines historiques depuis Binance pour plusieurs intervalles.
@@ -145,6 +146,7 @@ def load_binance_klines(
         start_date_str (str): Date de début pour l'historique (format 'YYYY-MM-DD' ou 'X days/months/years ago').
         end_date_str (Optional[str]): Date de fin pour l'historique (format 'YYYY-MM-DD'). 
                                       Si None, utilise la date actuelle.
+        testnet (bool): Utiliser le testnet Binance (défaut: False).
 
     Returns:
         Dict[str, pd.DataFrame]: Un dictionnaire où les clés sont les intervalles et
@@ -152,7 +154,7 @@ def load_binance_klines(
                                  ['timestamp', 'open', 'high', 'low', 'close', 'volume'].
                                  Retourne un dictionnaire vide si une erreur survient.
     """
-    client = Client(api_key, api_secret)
+    client = Client(api_key, api_secret, testnet=testnet)
     all_klines_data = {}
 
     # Convertir start_date_str en un format utilisable par Binance
@@ -213,7 +215,8 @@ def load_binance_klines(
 def get_binance_balance(
     api_key: str,
     api_secret: str,
-    specific_assets: Optional[List[str]] = None
+    specific_assets: Optional[List[str]] = None,
+    testnet: bool = False
 ) -> Dict[str, float]:
     """
     Récupère les soldes des actifs spécifiés depuis Binance.
@@ -223,6 +226,7 @@ def get_binance_balance(
         api_secret (str): Votre clé secrète API Binance.
         specific_assets (Optional[List[str]]): Une liste d'actifs à récupérer (ex: ['USDC', 'USDT']).
                                              Si None, tente de récupérer les stablecoins communs.
+        testnet (bool): Utiliser le testnet Binance (défaut: False).
 
     Returns:
         Dict[str, float]: Un dictionnaire avec les actifs comme clés et leurs soldes libres comme valeurs.
@@ -232,7 +236,7 @@ def get_binance_balance(
         print("La librairie Binance n'est pas installée. Impossible de récupérer les soldes.")
         return {}
 
-    client = Client(api_key, api_secret)
+    client = Client(api_key, api_secret, testnet=testnet)
     balances = {}
     
     try:

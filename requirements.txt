@@ -12,3 +12,12 @@ pytest>=7.0.0
 jupyter>=1.0.0
 python-binance>=1.0.0
 python-dotenv>=0.20.0
+
+xgboost
+optuna
+
+pymc
+
+scipy
+
+matplotlib

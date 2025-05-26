@@ -156,8 +156,16 @@ def run_backtest():
     
     print(f"Dimensions de X: {X.shape}, Dimensions de y: {y.shape}")
     
+    # TODO: VAL-001 - Validation Out-of-Sample Rigoureuse
+    # La séparation actuelle est un simple split chronologique.
+    # Pour une validation rigoureuse, envisager une séparation stricte d'un ensemble de test final
+    # qui ne sera JAMAIS utilisé pendant l'entraînement ou l'optimisation des hyperparamètres.
+    # Ce test final devrait simuler le déploiement en conditions réelles.
+    # Les données X_predict ici servent de "walk-forward" ou de test continu,
+    # mais un VRAI ensemble "out-of-time" final est crucial.
+
     # Split en train/predict pour la simulation
-    split_ratio = 0.8
+    split_ratio = 0.8 # Pourrait être ajusté pour garder plus de données pour un test final séparé.
     split_index = int(len(X) * split_ratio)
     if split_index == 0 and len(X) > 0 : # Cas où il y a peu de données, assurer au moins 1 pour train
         split_index = 1
@@ -169,7 +177,7 @@ def run_backtest():
             return
 
     X_train, y_train = X.iloc[:split_index], y.iloc[:split_index]
-    X_predict = X.iloc[split_index:]
+    X_predict = X.iloc[split_index:] # Ceci est l'ensemble de "test" pour le backtest actuel.
     timestamps_predict = market_data_df.iloc[split_index:]['timestamp'].reset_index(drop=True)
     
     if X_train.empty or y_train.empty or X_predict.empty:

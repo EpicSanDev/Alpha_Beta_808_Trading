@@ -1,0 +1,1 @@
+# This file makes Python treat the `tests/performance` directory as a package.

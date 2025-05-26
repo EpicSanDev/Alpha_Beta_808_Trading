@@ -27,12 +27,12 @@ def main():
               "Veuillez l'installer (pip install python-binance).")
         return
 
-    print("Récupération des soldes de stablecoins depuis Binance...")
+    print("Récupération des soldes de stablecoins depuis Binance testnet...")
     
     # Vous pouvez spécifier une liste de stablecoins si vous le souhaitez, par exemple :
     # stablecoins_to_check = ['USDC', 'USDT']
     # Sinon, la fonction get_binance_balance utilisera sa liste par défaut.
-    stablecoin_balances = get_binance_balance(api_key, api_secret) 
+    stablecoin_balances = get_binance_balance(api_key, api_secret, testnet=True) 
 
     if stablecoin_balances:
         print("\nSoldes des stablecoins trouvés :")

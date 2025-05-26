@@ -594,45 +594,51 @@ class BinanceRealTimeTrader:
         try:
             data = json.loads(message)
             
+            # Pour le format stream, les données sont dans data['data']
+            if 'stream' in data and 'data' in data:
+                stream_data = data['data']
+            else:
+                stream_data = data
+            
             # Ticker de prix
-            if 'c' in data and 'b' in data and 'a' in data:
+            if 'c' in stream_data and 'b' in stream_data and 'a' in stream_data:
                 market_data = MarketData(
-                    symbol=data['s'],
-                    price=float(data['c']),
-                    bid_price=float(data['b']),
-                    ask_price=float(data['a']),
-                    bid_quantity=float(data['B']),
-                    ask_quantity=float(data['A']),
-                    volume_24h=float(data['v']),
-                    price_change_24h=float(data['p']),
+                    symbol=stream_data['s'],
+                    price=float(stream_data['c']),
+                    bid_price=float(stream_data['b']),
+                    ask_price=float(stream_data['a']),
+                    bid_quantity=float(stream_data['B']),
+                    ask_quantity=float(stream_data['A']),
+                    volume_24h=float(stream_data['v']),
+                    price_change_24h=float(stream_data['p']),
                     timestamp=datetime.now()
                 )
                 
-                self.market_data[data['s']] = market_data
+                self.market_data[stream_data['s']] = market_data
                 
                 if self.on_market_data_callback:
                     self.on_market_data_callback(market_data)
             
             # Mise à jour d'ordre (user data stream)
-            elif 'e' in data and data['e'] == 'executionReport':
-                if data['i'] in self.open_orders:
-                    order = self.open_orders[data['i']]
-                    order.status = OrderStatus(data['X'])
-                    order.filled_quantity = float(data['z'])
-                    order.avg_fill_price = float(data['Z']) / float(data['z']) if float(data['z']) > 0 else 0
-                    order.update_time = datetime.fromtimestamp(data['T'] / 1000)
+            elif 'e' in stream_data and stream_data['e'] == 'executionReport':
+                if stream_data['i'] in self.open_orders:
+                    order = self.open_orders[stream_data['i']]
+                    order.status = OrderStatus(stream_data['X'])
+                    order.filled_quantity = float(stream_data['z'])
+                    order.avg_fill_price = float(stream_data['Z']) / float(stream_data['z']) if float(stream_data['z']) > 0 else 0
+                    order.update_time = datetime.fromtimestamp(stream_data['T'] / 1000)
                     
                     if self.on_order_update_callback:
                         self.on_order_update_callback(order)
                     
                     # Si l'ordre est complètement exécuté, le retirer des ordres ouverts
                     if order.status in [OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED]:
-                        del self.open_orders[data['i']]
+                        del self.open_orders[stream_data['i']]
                         self.order_history.append(order)
             
             # Mise à jour du compte
-            elif 'e' in data and data['e'] == 'outboundAccountPosition':
-                for balance_data in data['B']:
+            elif 'e' in stream_data and stream_data['e'] == 'outboundAccountPosition':
+                for balance_data in stream_data['B']:
                     asset = balance_data['a']
                     free = float(balance_data['f'])
                     locked = float(balance_data['l'])
@@ -660,7 +666,22 @@ class BinanceRealTimeTrader:
                 streams.append(f"{symbol.lower()}@ticker")
             
             if streams:
-                stream_url = f"{self.ws_url}/{'/'.join(streams)}"
+                # Corriger l'URL WebSocket pour Binance
+                if self.testnet:
+                    # Pour testnet, utiliser l'endpoint testnet correct
+                    if len(streams) == 1:
+                        stream_url = f"wss://stream.testnet.binance.vision/ws/{streams[0]}"
+                    else:
+                        # Pour multiple streams sur testnet
+                        stream_url = f"wss://stream.testnet.binance.vision/stream?streams={'/'.join(streams)}"
+                else:
+                    # Pour production, utiliser le format standard
+                    if len(streams) == 1:
+                        stream_url = f"wss://stream.binance.com:9443/ws/{streams[0]}"
+                    else:
+                        stream_url = f"wss://stream.binance.com:9443/stream?streams={'/'.join(streams)}"
+                
+                self.logger.info(f"Tentative de connexion WebSocket: {stream_url}")
                 
                 async with websockets.connect(stream_url) as websocket:
                     self.websocket = websocket
