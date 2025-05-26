@@ -1,0 +1,26 @@
+================================================================================
+RAPPORT DE BACKTEST COMPLET - ALPHABETA808TRADING
+================================================================================
+
+Test: comprehensive_test_20250527_011746
+Date: 20250527_011834
+Configuration: 15 paramètres
+
+DONNÉES TESTÉES:
+- Symboles: ADAUSDT, BTCUSDT, DOTUSDT, ETHUSDT, walk_forward, ensemble
+- Modèles: logistic_regression, random_forest, xgboost_classifier, elastic_net
+- Total tests: 16
+
+ANALYSE DES RISQUES:
+- Rendement moyen: 47.22%
+- Sharpe ratio moyen: 0.022
+- Drawdown moyen: -21.93%
+- Meilleur rendement: 209.03%
+
+RECOMMANDATIONS:
+- Modèle recommandé pour le Sharpe ratio: logistic_regression
+- Modèle recommandé pour les rendements: logistic_regression
+- Ratios de Sharpe faibles - révision stratégique recommandée
+- Drawdowns élevés détectés - gestion des risques à renforcer
+
+================================================================================

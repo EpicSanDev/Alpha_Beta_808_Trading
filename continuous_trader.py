@@ -552,24 +552,53 @@ class ContinuousTrader:
                         continue
                 
                 if len(predictions) > 0:
+                    # Valider que toutes les prédictions sont des nombres valides
+                    valid_predictions = []
+                    valid_weights = []
+                    for i, pred in enumerate(predictions):
+                        if not np.isnan(pred) and not np.isinf(pred):
+                            valid_predictions.append(pred)
+                            valid_weights.append(weights[i])
+                        else:
+                            logger.warning(f"Prédiction invalide ignorée pour {symbol}: {pred}")
+                    
+                    if len(valid_predictions) == 0:
+                        logger.warning(f"Toutes les prédictions sont invalides (NaN/Inf) pour {symbol}")
+                        return None
+                    
                     # Calculer la prédiction pondérée
-                    weighted_pred = np.average(predictions, weights=weights)
+                    weighted_pred = np.average(valid_predictions, weights=valid_weights)
+                    
+                    # Vérifier que la prédiction pondérée est valide
+                    if np.isnan(weighted_pred) or np.isinf(weighted_pred):
+                        logger.error(f"Prédiction pondérée invalide pour {symbol}: {weighted_pred}")
+                        return None
                     
                     # Ajouter quelques métriques d'ensemble
-                    std_pred = np.std(predictions) if len(predictions) > 1 else 0.0
-                    min_pred = np.min(predictions)
-                    max_pred = np.max(predictions)
+                    std_pred = np.std(valid_predictions) if len(valid_predictions) > 1 else 0.0
+                    min_pred = np.min(valid_predictions)
+                    max_pred = np.max(valid_predictions)
                     
                     logger.debug(f"Ensemble pour {symbol}: avg={weighted_pred:.3f}, std={std_pred:.3f}, min={min_pred:.3f}, max={max_pred:.3f}")
                     
                     # Convertir la probabilité en signal (-1 à 1)
                     signal = (weighted_pred - 0.5) * 2  # Map [0,1] to [-1,1]
                     
+                    # Valider le signal final
+                    if np.isnan(signal) or np.isinf(signal):
+                        logger.error(f"Signal final invalide pour {symbol}: {signal}")
+                        return None
+                    
                     # Réduire le signal si la variance est élevée (incertitude)
                     if std_pred > 0.2:  # Si écart-type > 20%
                         uncertainty_factor = max(0.5, 1.0 - std_pred)
                         signal *= uncertainty_factor
                         logger.debug(f"Signal réduit pour incertitude: {signal:.3f} (facteur: {uncertainty_factor:.3f})")
+                    
+                    # Validation finale du signal
+                    if np.isnan(signal) or np.isinf(signal):
+                        logger.error(f"Signal final après ajustement invalide pour {symbol}: {signal}")
+                        return None
                     
                     return signal
                 else:
@@ -579,9 +608,17 @@ class ContinuousTrader:
                     if os.path.exists(fallback_path):
                         prediction = load_model_and_predict(X, model_path=fallback_path, return_probabilities=True)
                         if prediction is not None and len(prediction) > 0:
-                            signal = (prediction[0] - 0.5) * 2
-                            logger.info(f"Utilisation du modèle de fallback pour {symbol}: {signal:.3f}")
-                            return signal
+                            # Valider la prédiction du modèle de fallback
+                            if not np.isnan(prediction[0]) and not np.isinf(prediction[0]):
+                                signal = (prediction[0] - 0.5) * 2
+                                # Validation finale du signal de fallback
+                                if not np.isnan(signal) and not np.isinf(signal):
+                                    logger.info(f"Utilisation du modèle de fallback pour {symbol}: {signal:.3f}")
+                                    return signal
+                                else:
+                                    logger.error(f"Signal de fallback invalide pour {symbol}: {signal}")
+                            else:
+                                logger.error(f"Prédiction de fallback invalide pour {symbol}: {prediction[0]}")
                     return None
                     
             else:
@@ -594,10 +631,21 @@ class ContinuousTrader:
                 prediction = load_model_and_predict(X, model_path=model_path, return_probabilities=True)
                 
                 if prediction is not None and len(prediction) > 0:
-                    # Convertir la probabilité en signal (-1 à 1)
-                    prob = prediction[0]
-                    signal = (prob - 0.5) * 2  # Map [0,1] to [-1,1]
-                    return signal
+                    # Valider la prédiction du modèle unique
+                    if not np.isnan(prediction[0]) and not np.isinf(prediction[0]):
+                        # Convertir la probabilité en signal (-1 à 1)
+                        prob = prediction[0]
+                        signal = (prob - 0.5) * 2  # Map [0,1] to [-1,1]
+                        
+                        # Validation finale du signal
+                        if not np.isnan(signal) and not np.isinf(signal):
+                            return signal
+                        else:
+                            logger.error(f"Signal final invalide pour {symbol}: {signal}")
+                            return None
+                    else:
+                        logger.error(f"Prédiction invalide du modèle unique pour {symbol}: {prediction[0]}")
+                        return None
             
             return None
             
@@ -632,12 +680,27 @@ class ContinuousTrader:
             price = signal_data['price'] # Prix au moment de la génération du signal
             market_snapshot = signal_data.get('market_data_snapshot', {}) # Données de la dernière bougie
 
+            # Validation initiale du signal pour NaN/Inf
+            if original_signal is None or np.isnan(original_signal) or np.isinf(original_signal):
+                logger.warning(f"Signal invalide ignoré pour {symbol}: {original_signal}")
+                return
+
+            # Validation du prix pour NaN/Inf
+            if price is None or np.isnan(price) or np.isinf(price):
+                logger.warning(f"Prix invalide ignoré pour {symbol}: {price}")
+                return
+
             self.stats['total_signals_processed'] += 1
             
             # Appliquer les filtres de signaux
             filtered_signal = original_signal
             if self.config['signal_filters']['enabled']:
                 filtered_signal = self._apply_signal_filters(symbol, original_signal, price, market_snapshot)
+            
+            # Validation du signal filtré pour NaN/Inf
+            if filtered_signal is None or np.isnan(filtered_signal) or np.isinf(filtered_signal):
+                logger.warning(f"Signal filtré invalide ignoré pour {symbol}: {filtered_signal}")
+                return
 
             if filtered_signal != original_signal:
                 logger.info(f"Signal pour {symbol} filtré de {original_signal:.3f} à {filtered_signal:.3f}")
@@ -722,6 +785,11 @@ class ContinuousTrader:
             else: # Volume est HAUT (ou au moins pas bas)
                  modified_signal *= volume_cfg.get('signal_boost_factor', 1.1)
                  logger.debug(f"Filtre volume (boost) appliqué pour {symbol}. Volume: {volume_24h_usd:.2f}. Signal: {modified_signal:.3f}")
+        
+        # Validation finale du signal modifié
+        if np.isnan(modified_signal) or np.isinf(modified_signal):
+            logger.error(f"Signal filtré invalide pour {symbol}: {modified_signal}, retour au signal original: {signal}")
+            modified_signal = signal
         
         return max(-1.0, min(1.0, modified_signal)) # Assurer que le signal reste dans [-1, 1]
 
