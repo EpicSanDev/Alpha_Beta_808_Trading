@@ -151,6 +151,31 @@ jobs:
           --namespace=${{ env.K8S_NAMESPACE }}-staging \
           --dry-run=client -o yaml | kubectl apply -f -
           
+    - name: Create/Update environment secrets
+      run: |
+        kubectl create secret generic environment-secrets \
+          --from-literal=environment="staging" \
+          --from-literal=deployment-timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --from-literal=git-commit="${{ github.sha }}" \
+          --from-literal=git-branch="${{ github.ref_name }}" \
+          --namespace=${{ env.K8S_NAMESPACE }}-staging \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Validate secrets configuration
+      run: |
+        # Vérifier que tous les secrets requis sont présents
+        kubectl get secret trading-secrets -n ${{ env.K8S_NAMESPACE }}-staging
+        kubectl get secret environment-secrets -n ${{ env.K8S_NAMESPACE }}-staging
+        
+        # Vérifier que les secrets contiennent les clés attendues
+        kubectl get secret trading-secrets -n ${{ env.K8S_NAMESPACE }}-staging -o jsonpath='{.data}' | jq 'keys[]' | grep -E "(binance-api-key|binance-api-secret|webhook-secret)"
+
+        # Vérifier que les valeurs des secrets ne sont pas exposées
+        kubectl get secret trading-secrets -n ${{ env.K8S_NAMESPACE }}-staging -o jsonpath='{.data}' | jq 'map_values(@base64d)' | grep -E "(your_expected_value_pattern)"
+
+        # Vérifier la présence de labels et annotations de sécurité
+        kubectl get secret trading-secrets -n ${{ env.K8S_NAMESPACE }}-staging -o json | jq '.[].metadata' | grep -E "(labels|annotations)"
+
     - name: Deploy to staging
       run: |
         # Copier les manifests et les adapter pour staging
