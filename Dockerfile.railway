@@ -1,0 +1,80 @@
+# AlphaBeta808 Trading Bot - Railway Optimized Dockerfile
+FROM python:3.11-slim
+
+LABEL maintainer="AlphaBeta808Trading"
+LABEL description="Automated cryptocurrency trading bot - Railway deployment"
+
+# Set environment variables for Railway
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src:/app \
+    FLASK_ENV=production \
+    DEBIAN_FRONTEND=noninteractive \
+    PORT=5000
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (minimal for Railway)
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    build-essential \
+    curl \
+    ca-certificates \
+    pkg-config \
+    libssl-dev \
+    libffi-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt .
+
+# Install Python dependencies optimized for Railway
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install core dependencies in batches for Railway's build limits
+RUN pip install --no-cache-dir --timeout=600 \
+    "pandas>=1.5.0" \
+    "numpy>=1.22.4,<1.27.0" \
+    "scipy>=1.7.0" \
+    "scikit-learn>=1.0.0" \
+    "flask>=2.3.0" \
+    "flask-socketio>=5.3.0" \
+    "flask-cors>=4.0.0" \
+    "werkzeug>=2.3.0"
+
+# Install trading specific packages
+RUN pip install --no-cache-dir --timeout=600 \
+    "python-binance>=1.0.0" \
+    "python-dotenv>=0.20.0" \
+    "ta>=0.10.0" \
+    "xgboost>=1.6.0" \
+    "joblib>=1.1.0" \
+    "requests>=2.28.0" \
+    "websocket-client>=1.5.0" \
+    "colorama>=0.4.6"
+
+# Install visualization packages
+RUN pip install --no-cache-dir --timeout=600 \
+    "matplotlib>=3.5.0" \
+    "seaborn>=0.11.0" \
+    "plotly>=5.0.0"
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p logs models_store backtest_results reports results web_interface/static web_interface/templates
+
+# Health check for Railway
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:${PORT}/health || exit 1
+
+# Expose the port Railway expects
+EXPOSE ${PORT}
+
+# Railway startup command
+CMD ["python", "web_interface/app_enhanced.py"]
