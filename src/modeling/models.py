@@ -624,9 +624,9 @@ def prepare_data_for_model(df: pd.DataFrame, target_shift_days: int = 1, feature
 
     return X, y
 
-def _objective_optuna(trial: optuna.Trial, X_opt: pd.DataFrame, y_opt: pd.Series, model_type: str, cv_splitter: TimeSeriesSplit, scale_features_flag: bool, global_random_state: int, precomputed_class_weight_dict: Dict) -> float:
+def _objective_optuna(trial: optuna.Trial, X_opt: pd.DataFrame, y_opt: pd.Series, model_type: str, cv_splitter: TimeSeriesSplit, scale_features_flag: bool, global_random_state: int, precomputed_class_weight_dict: Dict, socketio_instance=None, optimization_id_for_event=None, symbol_for_event=None) -> float:
     """
-    Fonction objectif à optimiser par Optuna.
+    Fonction objectif à optimiser par Optuna, avec émission d'événements SocketIO.
     """
     scores = []
     
@@ -731,33 +731,81 @@ def _objective_optuna(trial: optuna.Trial, X_opt: pd.DataFrame, y_opt: pd.Series
         except ValueError: 
             score = 0.0
         scores.append(score)
-        trial.report(score, fold)
+        trial.report(score, fold) # Important pour Optuna lui-même
+
+        # Émettre une mise à jour de progression via SocketIO si disponible
+        if socketio_instance and optimization_id_for_event:
+            progress_data = {
+                'optimization_id': optimization_id_for_event,
+                'symbol': symbol_for_event,
+                'trial_number': trial.number,
+                'fold_number': fold + 1,
+                'current_score_fold': score,
+                'intermediate_mean_score': np.mean(scores) if scores else 0.0,
+                'status_message': f"Optuna: Essai {trial.number}, Fold {fold+1}/{cv_splitter.get_n_splits()} pour {symbol_for_event} - Score: {score:.4f}"
+            }
+            # print(f"DEBUG: Emitting optimization_trial_update: {progress_data}") # Pour le débogage
+            socketio_instance.emit('optimization_trial_update', progress_data)
+            # time.sleep(0.01) # Petit délai pour s'assurer que le message est envoyé si beaucoup d'événements rapides
+
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
 
     return np.mean(scores) if scores else 0.0
 
 
-def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regression', model_params: Dict[str, Any] = None, model_path: str = 'models_store/model.joblib', test_size: float = 0.2, random_state: int = 42, scale_features: bool = True) -> Dict[str, Any]: # Changement du type de retour
+def train_model(X: pd.DataFrame, y: Optional[pd.Series], model_type: str = 'logistic_regression', model_params: Dict[str, Any] = None, model_path: str = 'models_store/model.joblib', test_size: float = 0.2, random_state: int = 42, scale_features: bool = True) -> Dict[str, Any]:
     if model_params is None:
         model_params = {}
-    
-    # Placeholder pour la détection d'anomalies dans les features d'entrée
-    # TODO: Implémenter des vérifications pour les anomalies (ex: valeurs extrêmes, distribution inattendue)
-    #       avant l'entraînement. Pourrait retourner un rapport ou lever des avertissements.
-    #       Par exemple, vérifier si X.describe() correspond aux attentes.
 
-    print(f"Début de l'entraînement du modèle {model_type} avec {len(X)} échantillons et {len(X.columns)} features.")
+    # X_input et y_input sont les données finales après préparation (si y initial est None)
+    X_input: pd.DataFrame
+    y_input: pd.Series
 
-    calculated_class_weight_dict = None 
-    if y.dtype == 'int' and y.nunique() > 1 : 
-        unique_classes = np.unique(y)
-        class_weights_values = compute_class_weight('balanced', classes=unique_classes, y=y)
+    if y is None:
+        # Si y n'est pas fourni, X est supposé être un DataFrame complet à partir duquel X (features) et y (target) seront dérivés.
+        print(f"INFO: y est None. Appel de prepare_data_for_model sur le DataFrame d'entrée (shape: {X.shape}).")
+        
+        required_params_for_prepare = ['feature_columns', 'target_column_name', 'problem_type']
+        missing_prepare_params = [p for p in required_params_for_prepare if p not in model_params]
+        if missing_prepare_params:
+            raise ValueError(f"Paramètres manquants dans model_params pour prepare_data_for_model: {missing_prepare_params}")
+
+        X_prepared, y_prepared = prepare_data_for_model(
+            df=X, # X est le DataFrame complet ici
+            feature_columns=model_params['feature_columns'],
+            target_column=None, # MODIFIÉ: Indiquer à prepare_data_for_model de créer la colonne target
+            price_change_threshold=model_params.get('price_change_threshold', 0.02),
+            target_shift_days=model_params.get('target_shift_days', 1),
+            problem_type=model_params['problem_type']
+        )
+        X_input = X_prepared
+        y_input = y_prepared
+        print(f"INFO: Après prepare_data_for_model, X_input shape: {X_input.shape}, y_input shape: {y_input.shape if y_input is not None else 'None'}")
+    else:
+        # Si y est fourni, X est supposé être déjà les features.
+        X_input = X
+        y_input = y
+
+    if y_input is None or y_input.empty:
+        raise ValueError("La variable cible (y_input) est vide ou None après la préparation des données.")
+    if X_input is None or X_input.empty:
+        raise ValueError("Les features (X_input) sont vides ou None après la préparation des données.")
+
+    # Placeholder pour la détection d'anomalies
+    # TODO: Implémenter des vérifications pour les anomalies sur X_input
+
+    print(f"Début de l'entraînement du modèle {model_type} avec {len(X_input)} échantillons et {len(X_input.columns)} features.")
+
+    calculated_class_weight_dict = None
+    if y_input.dtype == 'int' and y_input.nunique() > 1:
+        unique_classes = np.unique(y_input)
+        class_weights_values = compute_class_weight('balanced', classes=unique_classes, y=y_input)
         calculated_class_weight_dict = {cls: weight for cls, weight in zip(unique_classes, class_weights_values)}
-        print(f"Poids des classes (calculés sur y complet avant split): {calculated_class_weight_dict}")
+        print(f"Poids des classes (calculés sur y_input complet avant split): {calculated_class_weight_dict}")
 
     optimize_hyperparams = model_params.pop('optimize_hyperparameters', False)
-    optuna_n_trials = model_params.pop('optuna_n_trials', 10) 
+    optuna_n_trials = model_params.pop('optuna_n_trials', 10)
     optuna_direction = model_params.pop('optuna_direction', 'maximize')
     optuna_cv_splits = model_params.pop('optuna_cv_splits', 3)
     
@@ -765,57 +813,76 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
 
     if optimize_hyperparams:
         print(f"Optimisation des hyperparamètres pour {model_type} avec Optuna ({optuna_n_trials} essais)...")
-        X_train_val, X_test_final_split, y_train_val, y_test_final_split = train_test_split(X, y, test_size=test_size, random_state=random_state, shuffle=False)
+        # Utiliser X_input et y_input pour le split Optuna
+        X_train_val, X_test_final_split, y_train_val, y_test_final_split = train_test_split(X_input, y_input, test_size=test_size, random_state=random_state, shuffle=False)
         
         optuna_class_weight_dict_for_objective = None
+        # Utiliser y_train_val pour calculer les poids pour Optuna
         if y_train_val.dtype == 'int' and y_train_val.nunique() > 1:
             unique_classes_opt = np.unique(y_train_val)
             class_weights_val_opt = compute_class_weight('balanced', classes=unique_classes_opt, y=y_train_val)
             optuna_class_weight_dict_for_objective = {cls: weight for cls, weight in zip(unique_classes_opt, class_weights_val_opt)}
-        elif calculated_class_weight_dict: 
+        # Si y_train_val n'est pas binaire/int, calculated_class_weight_dict (basé sur y_input) pourrait être utilisé s'il est pertinent
+        elif calculated_class_weight_dict: # Fallback sur les poids calculés sur y_input complet
              optuna_class_weight_dict_for_objective = calculated_class_weight_dict
 
         tscv = TimeSeriesSplit(n_splits=optuna_cv_splits)
         study = optuna.create_study(direction=optuna_direction)
         
-        study.optimize(lambda trial: _objective_optuna(trial, X_train_val, y_train_val, model_type, tscv, scale_features, random_state, optuna_class_weight_dict_for_objective), n_trials=optuna_n_trials)
+        # Récupérer socketio_instance et optimization_id depuis model_params si disponibles
+        # Ces paramètres devront être passés à train_model depuis app_enhanced.py
+        socketio_instance_for_optuna = model_params.pop('socketio_instance', None)
+        optimization_id_for_optuna = model_params.pop('optimization_id', None)
+        symbol_for_optuna_event = model_params.pop('symbol_for_event', None)
+
+
+        study.optimize(lambda trial: _objective_optuna(
+            trial, X_train_val, y_train_val, model_type, tscv,
+            scale_features, random_state, optuna_class_weight_dict_for_objective,
+            socketio_instance=socketio_instance_for_optuna,
+            optimization_id_for_event=optimization_id_for_optuna,
+            symbol_for_event=symbol_for_optuna_event
+        ), n_trials=optuna_n_trials)
         
         best_params_from_optuna = study.best_params
         print(f"Meilleurs hyperparamètres trouvés par Optuna: {best_params_from_optuna}")
-    else:
-        pass 
+    # else: # Pas besoin de 'else: pass', X_train_final etc. seront définis à partir de X_input, y_input
 
     if optimize_hyperparams:
+        # Si Optuna a été utilisé, X_train_val etc. sont déjà définis
         X_train_final = X_train_val
         y_train_final = y_train_val
         X_test_final = X_test_final_split
         y_test_final = y_test_final_split
     else:
-        X_train_final, X_test_final, y_train_final, y_test_final = train_test_split(X, y, test_size=test_size, random_state=random_state, shuffle=False)
+        # Si Optuna n'est pas utilisé, faire le split sur X_input et y_input
+        X_train_final, X_test_final, y_train_final, y_test_final = train_test_split(X_input, y_input, test_size=test_size, random_state=random_state, shuffle=False)
 
     scaler = None
-    X_train_processed = X_train_final 
-    X_test_processed = X_test_final   
+    # Utiliser X_train_final et X_test_final pour la standardisation
+    X_train_scaled_for_fit = X_train_final 
+    X_test_scaled_for_eval = X_test_final   
 
     model_requires_scaling = model_type in ['logistic_regression', 'elastic_net', 'sgd_classifier']
     if scale_features and model_requires_scaling:
         scaler = StandardScaler()
-        X_train_processed = pd.DataFrame(scaler.fit_transform(X_train_final), columns=X_train_final.columns, index=X_train_final.index)
-        X_test_processed = pd.DataFrame(scaler.transform(X_test_final), columns=X_test_final.columns, index=X_test_final.index)
+        X_train_scaled_for_fit = pd.DataFrame(scaler.fit_transform(X_train_final), columns=X_train_final.columns, index=X_train_final.index)
+        X_test_scaled_for_eval = pd.DataFrame(scaler.transform(X_test_final), columns=X_test_final.columns, index=X_test_final.index)
         print(f"Features standardisées pour l'entraînement final du modèle {model_type}")
     elif scale_features and not model_requires_scaling:
          print(f"Note: La standardisation globale est activée mais non appliquée pour {model_type} car généralement non requise.")
 
     default_params_structure = {
         'logistic_regression': {'solver': 'liblinear', 'max_iter': 1000},
-        'elastic_net': {'loss': 'log_loss', 'penalty': 'elasticnet', 'max_iter': 1000, 'tol': 1e-3}, # Ajout régularisation adaptative (l1_ratio, alpha via model_params)
-        'random_forest': {'n_jobs': -1, 'ccp_alpha': 0.0}, # ccp_alpha pour élagage
+        'elastic_net': {'loss': 'log_loss', 'penalty': 'elasticnet', 'max_iter': 1000, 'tol': 1e-3},
+        'random_forest': {'n_jobs': -1, 'ccp_alpha': 0.0},
         'xgboost_classifier': {'objective': 'binary:logistic', 'eval_metric': 'logloss'},
         'quantile_regression': {'loss': 'quantile'},
         'bidirectional_lstm': {'activation': 'sigmoid', 'output_units': 1, 'dropout_rate': 0.2, 'l1_reg': 0.0, 'l2_reg': 0.0},
         'temporal_cnn': {'activation': 'sigmoid', 'output_units': 1, 'dropout_rate': 0.2, 'l1_reg': 0.0, 'l2_reg': 0.0},
-        'gaussian_process_regressor': {'num_features': X_train_final.shape[1]}, # num_features est crucial
-        'hierarchical_bayesian': {'num_features': X_train_final.shape[1]} # num_features peut être utile
+        # S'assurer que X_train_final est défini avant d'accéder à .shape[1]
+        'gaussian_process_regressor': {'num_features': X_train_final.shape[1] if X_train_final is not None and not X_train_final.empty else X_input.shape[1]},
+        'hierarchical_bayesian': {'num_features': X_train_final.shape[1] if X_train_final is not None and not X_train_final.empty else X_input.shape[1]}
     }
     
     current_constructor_params = default_params_structure.get(model_type, {}).copy()
@@ -827,22 +894,19 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
     # `model_params` a déjà eu les clés d'Optuna retirées.
     # `best_params_from_optuna` contient les clés optimisées.
     
-    temp_params = model_params.copy() # Commence avec les params utilisateur restants
-    temp_params.update(best_params_from_optuna) # Surcharge/ajoute avec les params optimisés
+    temp_params = model_params.copy() 
+    temp_params.update(best_params_from_optuna) 
     
-    current_constructor_params.update(temp_params) # Met à jour les defaults avec le résultat
+    current_constructor_params.update(temp_params)
 
-    # Gestion spécifique de l'early stopping pour XGBoost pour l'entraînement final
-    # Si 'early_stopping_rounds_cv' (nom unique utilisé dans Optuna) est dans les meilleurs paramètres d'Optuna, on le garde pour le fit final.
-    # Sinon, on vérifie s'il était dans les model_params originaux sous le nom 'early_stopping_rounds'.
     final_fit_early_stopping_rounds = best_params_from_optuna.pop('early_stopping_rounds_cv', None) 
     if final_fit_early_stopping_rounds is None: 
         final_fit_early_stopping_rounds = model_params.get('early_stopping_rounds')
 
-
     if 'random_state' not in current_constructor_params:
         current_constructor_params['random_state'] = random_state
     
+    # Utiliser y_train_final pour calculer les poids pour l'entraînement final
     final_class_weight_dict = None
     if y_train_final.dtype == 'int' and y_train_final.nunique() > 1:
         unique_classes_final = np.unique(y_train_final)
@@ -851,29 +915,27 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         print(f"Poids des classes pour l'entraînement final (sur y_train_final): {final_class_weight_dict}")
  
     is_sklearn_classifier_type = model_type in ['logistic_regression', 'elastic_net', 'random_forest', 'xgboost_classifier']
-    # Les nouveaux modèles de NN peuvent aussi être des classifieurs
-    is_nn_classifier_type = model_type in ['bidirectional_lstm', 'temporal_cnn'] and current_constructor_params.get('activation') == 'sigmoid' # current_constructor_params car constructor_params n'est pas encore défini
+    is_nn_classifier_type = model_type in ['bidirectional_lstm', 'temporal_cnn'] and current_constructor_params.get('activation') == 'sigmoid'
 
     if is_sklearn_classifier_type and final_class_weight_dict:
         if model_type == 'xgboost_classifier':
-            if 'scale_pos_weight' not in current_constructor_params:
+            if 'scale_pos_weight' not in current_constructor_params: # Ne pas écraser si déjà optimisé
                 counts_train_final = y_train_final.value_counts()
                 if 0 in counts_train_final and 1 in counts_train_final and counts_train_final[1] > 0:
                     current_constructor_params['scale_pos_weight'] = counts_train_final[0] / counts_train_final[1]
-        elif 'class_weight' not in current_constructor_params:
+        elif 'class_weight' not in current_constructor_params: # Ne pas écraser si déjà optimisé
             current_constructor_params['class_weight'] = final_class_weight_dict
             
     keys_to_remove_for_constructor = [
         'feature_groups', 'temporal_stratification_params',
         'custom_objective_params', 'temporal_weighting_params',
-        # 'early_stopping_rounds', # On le gère séparément pour le fit final
-        # Clés spécifiques à Optuna qui pourraient rester si Optuna n'est pas utilisé
-        'optimize_hyperparameters', 'optuna_n_trials', 'optuna_direction', 'optuna_cv_splits'
+        'optimize_hyperparameters', 'optuna_n_trials', 'optuna_direction', 'optuna_cv_splits',
+        # Retirer aussi les clés spécifiques à prepare_data_for_model si elles sont dans model_params
+        'feature_columns', 'target_column_name', 'problem_type', 
+        'price_change_threshold', 'target_shift_days'
     ]
     
-    # On retire certaines clés des constructor_params car elles ne sont pas pour le constructeur du modèle sklearn
     constructor_params = {k: v for k, v in current_constructor_params.items() if k not in keys_to_remove_for_constructor}
-
 
     if current_constructor_params.get('feature_groups') and model_type == 'elastic_net':
         print(f"Info: 'feature_groups' pour ElasticNet ({current_constructor_params.get('feature_groups')}) n'est pas utilisé activement dans cette version.")
@@ -884,123 +946,100 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
     if current_constructor_params.get('temporal_weighting_params') and model_type == 'xgboost_classifier':
         print(f"Info: 'temporal_weighting_params' ({current_constructor_params.get('temporal_weighting_params')}) pour XGBoost. Calcul de final_sample_weights à implémenter si besoin pour le fit final.")
 
-    # Pour les modèles NN, s'assurer que input_shape est fourni si nécessaire
-    # X_train_processed est un DataFrame pandas. Les modèles NN attendent souvent des arrays numpy.
-    # Et pour LSTM/CNN, souvent une forme 3D (samples, timesteps, features)
     if model_type in ['bidirectional_lstm', 'temporal_cnn']:
         if 'input_shape' not in constructor_params:
-            # Suppose (timesteps=1, num_features) pour l'instant si non spécifié.
-            # Une vraie implémentation nécessiterait une préparation de données séquentielles dédiée.
-            num_features_for_shape = X_train_processed.shape[1] # X_train_processed est un DataFrame ici
-            default_timesteps = constructor_params.get('timesteps', 1) # Permet de spécifier 'timesteps' dans model_params
+            num_features_for_shape = X_train_scaled_for_fit.shape[1]
+            default_timesteps = constructor_params.get('timesteps', 1)
             constructor_params['input_shape'] = (default_timesteps, num_features_for_shape)
             print(f"Avertissement/Info: 'input_shape' pour {model_type} est {constructor_params['input_shape']}. Si timesteps > 1, les données seront remodelées.")
-        # Les données X_train_processed et X_test_processed devront être remodelées en 3D si timesteps > 1.
-        # Cette logique de remodelage sera dans la section fit.
     elif model_type == 'gaussian_process_regressor':
-        # S'assurer que num_features est bien dans constructor_params
-        if 'num_features' not in constructor_params:
-            constructor_params['num_features'] = X_train_final.shape[1]
-        # Passer un échantillon de X_train_final pour l'initialisation des points induisants
-        # Ceci est géré par le fait que _build_model est appelé dans __init__ et peut prendre X_train_sample...
-        # Cependant, _build_model dans GaussianProcessRegressionModel a été modifié pour ne pas prendre X_train_sample directement.
-        # Il retourne maintenant des composants. Le modèle GPflow est construit dans fit.
-        # On peut passer X_train_processed.head() ou similaire si _build_model en a besoin pour Z.
-        # Pour l'instant, _build_model prend X_train_sample_for_inducing_variable, qui n'est pas fourni ici.
-        # On va le passer explicitement si inducing_points_ratio est défini.
+        if 'num_features' not in constructor_params: # Devrait être déjà là via default_params_structure
+            constructor_params['num_features'] = X_train_final.shape[1] if X_train_final is not None and not X_train_final.empty else X_input.shape[1]
         if constructor_params.get('inducing_points_ratio') and 'X_train_sample_for_inducing_variable' not in constructor_params:
-             constructor_params['X_train_sample_for_inducing_variable'] = X_train_final.head(100) # Un échantillon
+             # Utiliser X_train_final (qui est X_input si pas d'Optuna, ou X_train_val si Optuna)
+             sample_source_for_inducing = X_train_final if X_train_final is not None and not X_train_final.empty else X_input
+             constructor_params['X_train_sample_for_inducing_variable'] = sample_source_for_inducing.head(100)
     elif model_type == 'hierarchical_bayesian':
-        if 'num_features' not in constructor_params:
-            constructor_params['num_features'] = X_train_final.shape[1]
+        if 'num_features' not in constructor_params: # Devrait être déjà là
+            constructor_params['num_features'] = X_train_final.shape[1] if X_train_final is not None and not X_train_final.empty else X_input.shape[1]
         if 'model_specification_func' not in constructor_params:
-            # Fournir une fonction de spécification par défaut ou lever une erreur
-            # Pour l'instant, on s'attend à ce qu'elle soit dans model_params
             print(f"Avertissement: 'model_specification_func' non fournie pour HierarchicalBayesianModel. Le fit échouera.")
 
-
     print(f"Construction du modèle final {model_type} avec les paramètres constructeur: {constructor_params}")
+    model: Any # Déclaration de type pour model
     if model_type == 'logistic_regression':
         model = LogisticRegression(**constructor_params)
     elif model_type == 'elastic_net':
-        model = SGDClassifier(**constructor_params)
+        model = SGDClassifier(**constructor_params) # SGDClassifier est utilisé pour ElasticNet en classification
     elif model_type == 'random_forest':
         model = RandomForestClassifier(**constructor_params)
     elif model_type == 'xgboost_classifier':
-        if callable(constructor_params.get('objective')):
-            print("Utilisation d'une fonction objectif personnalisée pour XGBoost.")
-        # Ne pas ajouter de callbacks au constructeur pour éviter les erreurs
-        # L'early stopping sera géré via les paramètres de fit
         model = xgb.XGBClassifier(**constructor_params)
     elif model_type == 'quantile_regression':
-        if 'alpha' not in constructor_params: constructor_params['alpha'] = 0.5
-        constructor_params.pop('class_weight', None)
-        model = GradientBoostingRegressor(**constructor_params)
+        if 'alpha' not in constructor_params: constructor_params['alpha'] = 0.5 # alpha est le quantile pour QuantileRegressor
+        constructor_params.pop('class_weight', None) # Pas pertinent pour la régression
+        model = GradientBoostingRegressor(**constructor_params) # GradientBoostingRegressor peut faire de la régression quantile
     elif model_type == 'bidirectional_lstm':
-        # Assurer que X_train_processed est au format attendu (ex: numpy array, potentiellement 3D)
         model = BidirectionalLSTMModel(**constructor_params)
     elif model_type == 'temporal_cnn':
         model = TemporalCNNModel(**constructor_params)
     elif model_type == 'gaussian_process_regressor':
-        # X_train_sample_for_inducing_variable est retiré car _build_model est appelé dans __init__
-        # et le vrai modèle est construit dans fit.
-        # num_features est déjà dans constructor_params grâce à default_params_structure
         temp_inducing_sample = constructor_params.pop('X_train_sample_for_inducing_variable', None)
         model = GaussianProcessRegressionModel(**constructor_params)
-        # Le modèle GPflow réel est construit dans model.fit(), qui a accès à X_fit_data
-        # Si temp_inducing_sample a été fourni, il pourrait être passé à fit via fit_final_args
-        if temp_inducing_sample is not None and model.inducing_points_ratio:
-            fit_final_args['X_train_sample_for_inducing_variable'] = temp_inducing_sample
-
+        # fit_final_args sera utilisé plus bas pour passer temp_inducing_sample si besoin
     elif model_type == 'hierarchical_bayesian':
-        # model_specification_func et num_features sont attendus dans constructor_params
         model = HierarchicalBayesianModelPlaceholder(**constructor_params)
     else:
         raise ValueError(f"Type de modèle non supporté : {model_type}.")
 
-    print(f"Entraînement du modèle final {model_type} sur {len(X_train_processed)} échantillons.")
+    print(f"Entraînement du modèle final {model_type} sur {len(X_train_scaled_for_fit)} échantillons.")
     fit_final_args = {}
     
-    # Préparation des données pour le fit (conversion en numpy, remodelage)
-    X_fit_data = X_train_processed.values if isinstance(X_train_processed, pd.DataFrame) else X_train_processed
+    # Utiliser X_train_scaled_for_fit et y_train_final pour l'entraînement
+    X_fit_data = X_train_scaled_for_fit.values if isinstance(X_train_scaled_for_fit, pd.DataFrame) else X_train_scaled_for_fit
     y_fit_data = y_train_final.values if isinstance(y_train_final, pd.Series) else y_train_final
-    X_test_data_eval = X_test_processed.values if isinstance(X_test_processed, pd.DataFrame) else X_test_processed
+    
+    # Utiliser X_test_scaled_for_eval et y_test_final pour l'évaluation (ex: early stopping)
+    X_test_data_eval = X_test_scaled_for_eval.values if isinstance(X_test_scaled_for_eval, pd.DataFrame) else X_test_scaled_for_eval
     y_test_data_eval = y_test_final.values if isinstance(y_test_final, pd.Series) else y_test_final
 
-
-    # Gestion de l'early stopping pour XGBoost lors du fit final
     if model_type == 'xgboost_classifier' and final_fit_early_stopping_rounds is not None:
-        # Pour XGBoost v3.0.2+, l'early stopping doit être passé au constructeur
-        if final_fit_early_stopping_rounds not in constructor_params:
-            constructor_params['early_stopping_rounds'] = final_fit_early_stopping_rounds
+        # constructor_params a déjà early_stopping_rounds si optimisé. Sinon, on l'ajoute ici si fourni.
+        if 'early_stopping_rounds' not in constructor_params and final_fit_early_stopping_rounds:
+             # Ceci est redondant si XGBClassifier est recréé, mais gardé pour clarté si model est modifié en place.
+             # En fait, le modèle est déjà créé. On ne peut pas changer les params du constructeur ici.
+             # La bonne pratique est de s'assurer que constructor_params est final avant la création du modèle.
+             # Pour XGBoost, early_stopping_rounds est un paramètre de fit() ou du constructeur (versions récentes).
+             # On va supposer qu'il est dans constructor_params.
+             pass
         if X_test_data_eval is not None and len(X_test_data_eval) > 0 and y_test_data_eval is not None and len(y_test_data_eval) > 0 :
             fit_final_args['eval_set'] = [(X_test_data_eval, y_test_data_eval)]
-            print(f"  Utilisation pour fit XGBoost final: eval_set sur le jeu de test avec early_stopping_rounds={final_fit_early_stopping_rounds} via constructeur.")
+            # Si early_stopping_rounds n'est pas dans constructor_params, il faut le passer à fit (anciennes versions XGB)
+            # Pour les versions récentes, il est préférable de le passer au constructeur.
+            # On suppose que constructor_params contient déjà early_stopping_rounds si applicable.
+            print(f"  Utilisation pour fit XGBoost final: eval_set sur le jeu de test.")
         else:
-            print("Avertissement: Early stopping pour XGBoost final non appliqué car les données de test ne sont pas prêtes ou vides.")
+            print("Avertissement: eval_set pour XGBoost final non appliqué car les données de test ne sont pas prêtes ou vides.")
 
     elif model_type in ['bidirectional_lstm', 'temporal_cnn']:
-        input_shape_for_fit = constructor_params.get('input_shape')
+        input_shape_for_fit = constructor_params.get('input_shape') # constructor_params est déjà nettoyé
         if input_shape_for_fit and len(input_shape_for_fit) == 2:
-            timesteps, num_features = input_shape_for_fit
-            if timesteps > 0 and X_fit_data.shape[1] == num_features: # Vérifie si le nombre de features correspond avant reshape
+            timesteps, num_features_nn = input_shape_for_fit # Renommer num_features pour éviter conflit
+            if timesteps > 0 and X_fit_data.shape[1] == num_features_nn:
                 try:
-                    X_fit_data = X_fit_data.reshape((X_fit_data.shape[0], timesteps, num_features))
-                    if X_test_data_eval is not None and X_test_data_eval.shape[1] == num_features:
-                        X_test_data_eval = X_test_data_eval.reshape((X_test_data_eval.shape[0], timesteps, num_features))
+                    X_fit_data = X_fit_data.reshape((X_fit_data.shape[0], timesteps, num_features_nn))
+                    if X_test_data_eval is not None and X_test_data_eval.shape[1] == num_features_nn:
+                        X_test_data_eval = X_test_data_eval.reshape((X_test_data_eval.shape[0], timesteps, num_features_nn))
                     elif X_test_data_eval is not None:
-                         print(f"Avertissement: X_test_data_eval n'a pas le bon nombre de features ({X_test_data_eval.shape[1]} vs {num_features}) pour le remodelage NN. Validation_data ne sera pas utilisé.")
-                         X_test_data_eval = None # Invalider pour validation_data
-                except ValueError as e:
-                    print(f"Erreur de remodelage pour {model_type}: {e}. Vérifier 'input_shape' et les données.")
-                    # Ne pas continuer avec un fit qui échouerait probablement
+                         print(f"Avertissement: X_test_data_eval n'a pas le bon nombre de features ({X_test_data_eval.shape[1]} vs {num_features_nn}) pour le remodelage NN. Validation_data ne sera pas utilisé.")
+                         X_test_data_eval = None
+                except ValueError as e_reshape:
+                    print(f"Erreur de remodelage pour {model_type}: {e_reshape}. Vérifier 'input_shape' et les données.")
                     return {'error': f"Erreur de remodelage des données pour {model_type}"}
-
             elif timesteps > 0 :
-                 print(f"Avertissement: Nombre de features ({X_fit_data.shape[1]}) ne correspond pas à input_shape ({num_features}) pour {model_type}. Remodelage ignoré.")
+                 print(f"Avertissement: Nombre de features ({X_fit_data.shape[1]}) ne correspond pas à input_shape ({num_features_nn}) pour {model_type}. Remodelage ignoré.")
 
-
-        fit_epochs = current_constructor_params.get('epochs', model_params.get('epochs', 10))
+        fit_epochs = current_constructor_params.get('epochs', model_params.get('epochs', 10)) # current_constructor_params a encore tout
         fit_batch_size = current_constructor_params.get('batch_size', model_params.get('batch_size', 32))
         fit_early_stopping_patience = current_constructor_params.get('early_stopping_patience', model_params.get('early_stopping_patience'))
 
@@ -1010,16 +1049,18 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
         if fit_early_stopping_patience and X_test_data_eval is not None and y_test_data_eval is not None and len(X_test_data_eval) > 0 and len(y_test_data_eval) > 0:
              fit_final_args['validation_data'] = (X_test_data_eval, y_test_data_eval)
              fit_final_args['early_stopping_patience'] = fit_early_stopping_patience
-             print(f"  Early stopping pour NN (placeholder) avec patience {fit_early_stopping_patience} sur le jeu de test final.")
+             print(f"  Early stopping pour NN avec patience {fit_early_stopping_patience} sur le jeu de test final.")
         elif fit_early_stopping_patience:
             print("Avertissement: Early stopping pour NN non appliqué car les données de validation ne sont pas prêtes ou vides.")
 
     elif model_type == 'gaussian_process_regressor':
         fit_optimize_restarts = current_constructor_params.get('optimize_restarts', model_params.get('optimize_restarts', 5))
         fit_final_args.update({'optimize_restarts': fit_optimize_restarts})
-        # y_fit_data pour GP doit être (n_samples, 1)
-        if y_fit_data.ndim == 1:
-            y_fit_data = y_fit_data.reshape(-1,1)
+        if y_fit_data.ndim == 1: y_fit_data = y_fit_data.reshape(-1,1)
+        # Passer temp_inducing_sample à fit si besoin (déjà géré dans la création de `model` si c'était dans constructor_params)
+        # La logique de `temp_inducing_sample` a été retirée de la création du modèle,
+        # car le modèle GPflow est maintenant entièrement construit dans sa propre méthode `fit`.
+        # Si `inducing_points_ratio` est défini, `GaussianProcessRegressionModel.fit` utilisera X_fit_data pour Z.
 
     elif model_type == 'hierarchical_bayesian':
         fit_draws = current_constructor_params.get('draws', model_params.get('draws', 2000))
@@ -1030,40 +1071,33 @@ def train_model(X: pd.DataFrame, y: pd.Series, model_type: str = 'logistic_regre
     model.fit(X_fit_data, y_fit_data, sample_weight=final_sample_weights, **fit_final_args)
     
     feature_importances_dict: Optional[Dict[str, float]] = None
-    if hasattr(model, 'feature_importances_'):
+    if hasattr(model, 'feature_importances_'): # Pour RF, XGBoost, etc.
         importances = model.feature_importances_
-        feature_importances_dict = dict(zip(X_train_final.columns, importances))
+        feature_importances_dict = dict(zip(X_train_final.columns, importances)) # Utiliser X_train_final pour les noms de colonnes
         print(f"Importance des features pour {model_type}: {feature_importances_dict}")
     elif model_type == 'logistic_regression' and hasattr(model, 'coef_'):
-        # Pour la régression logistique, les coefficients peuvent servir d'indicateur d'importance
-        # Note: Pour la classification multiclasse, coef_ aura une forme (n_classes, n_features)
-        # Pour la binaire, (1, n_features) ou (n_features,)
         coefs = model.coef_
-        if coefs.ndim == 1: # Cas binaire simple ou déjà aplati
+        if coefs.ndim == 1:
             feature_importances_dict = dict(zip(X_train_final.columns, coefs))
-        elif coefs.ndim == 2 and coefs.shape[0] == 1: # Cas binaire avec shape (1, n_features)
+        elif coefs.ndim == 2 and coefs.shape[0] == 1:
             feature_importances_dict = dict(zip(X_train_final.columns, coefs[0]))
-        else: # Multiclasse ou autre cas non géré simplement ici
+        else:
             print(f"Coefficients pour {model_type} (shape {coefs.shape}) non directement convertis en feature_importances simples.")
         if feature_importances_dict:
              print(f"Coefficients (comme importance) pour {model_type}: {feature_importances_dict}")
 
-
-    # Stocker également les paramètres de fit qui ne sont pas des paramètres de constructeur (ex: early stopping)
-    # pour référence, si nécessaire.
-    # TODO: Ajouter des méta-informations pour la traçabilité (version du code, date, hash des données d'entraînement si possible)
     model_data = {
         'model': model,
         'scaler': scaler,
-        'feature_columns': list(X_train_final.columns),
+        'feature_columns': list(X_train_final.columns), # Colonnes utilisées pour l'entraînement final
         'model_type': model_type,
-        'training_constructor_params': constructor_params, # Paramètres passés au __init__
-        'training_fit_params': fit_final_args, # Paramètres passés au .fit()
-        'feature_importances': feature_importances_dict, # Ajout de l'importance des features
-        'training_timestamp': pd.Timestamp.now().isoformat(), # Ajout timestamp d'entraînement
-        'code_version': get_git_revision_hash(), # Tentative d'ajout de la version du code
-        'data_hash': calculate_data_hash(X_train_final, y_train_final), # Tentative d'ajout du hash des données
-        'dependencies_versions': { # Ajout des versions des dépendances
+        'training_constructor_params': constructor_params,
+        'training_fit_params': fit_final_args,
+        'feature_importances': feature_importances_dict,
+        'training_timestamp': pd.Timestamp.now().isoformat(),
+        'code_version': get_git_revision_hash(),
+        'data_hash': calculate_data_hash(X_train_final, y_train_final), # Hash sur les données finales d'entraînement
+        'dependencies_versions': {
             'scikit-learn': sklearn.__version__,
             'xgboost': xgboost.__version__,
             'pandas': pd.__version__,

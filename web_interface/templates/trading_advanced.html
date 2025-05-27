@@ -1,0 +1,945 @@
+{% extends "base.html" %}
+
+{% block title %}Advanced Trading - AlphaBeta808{% endblock %}
+{% block page_title %}Advanced Trading Interface{% endblock %}
+
+{% block extra_css %}
+<!-- TradingView Charting Library -->
+<script src="https://s3.tradingview.com/tv.js"></script>
+<style>
+    .trading-panel {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1.5rem;
+    }
+    
+    .trading-mode-switch {
+        position: relative;
+        display: inline-block;
+        width: 120px;
+        height: 34px;
+    }
+    
+    .trading-mode-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    
+    .mode-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #dc3545;
+        border-radius: 34px;
+        transition: .4s;
+    }
+    
+    .mode-slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        border-radius: 50%;
+        transition: .4s;
+    }
+    
+    input:checked + .mode-slider {
+        background-color: #28a745;
+    }
+    
+    input:checked + .mode-slider:before {
+        transform: translateX(86px);
+    }
+    
+    .order-form {
+        padding: 1.5rem;
+    }
+    
+    .position-card {
+        border-left: 4px solid var(--primary-color);
+        margin-bottom: 1rem;
+    }
+    
+    .position-card.long {
+        border-left-color: var(--success-color);
+    }
+    
+    .position-card.short {
+        border-left-color: var(--danger-color);
+    }
+    
+    .alert-item {
+        border-left: 4px solid var(--warning-color);
+        margin-bottom: 0.5rem;
+    }
+    
+    .alert-item.triggered {
+        border-left-color: var(--success-color);
+        opacity: 0.7;
+    }
+    
+    .pnl-positive {
+        color: var(--success-color);
+        font-weight: 600;
+    }
+    
+    .pnl-negative {
+        color: var(--danger-color);
+        font-weight: 600;
+    }
+    
+    .tradingview-container {
+        height: 600px;
+        width: 100%;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    .risk-gauge {
+        width: 150px;
+        height: 150px;
+    }
+    
+    .balance-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .balance-item:last-child {
+        border-bottom: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Trading Mode Header -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card trading-panel">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <h5 class="mb-0 me-4">Trading Mode:</h5>
+                        <label class="trading-mode-switch">
+                            <input type="checkbox" id="tradingModeSwitch" onchange="switchTradingMode()">
+                            <span class="mode-slider"></span>
+                        </label>
+                        <span class="ms-3 fw-semibold" id="tradingModeText">Paper Trading</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="text-center">
+                            <div class="text-muted small">Portfolio Value</div>
+                            <div class="h5 mb-0" id="portfolioValue">$10,000.00</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted small">Daily P&L</div>
+                            <div class="h5 mb-0" id="dailyPnL">+$0.00</div>
+                        </div>
+                        <button class="btn btn-outline-primary" onclick="syncRealBalances()">
+                            <i class="fas fa-sync me-1"></i>Sync Balances
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Main Chart Area -->
+    <div class="col-lg-8">
+        <!-- Symbol Selector -->
+        <div class="card trading-panel mb-3">
+            <div class="card-body py-2">
+                <div class="d-flex align-items-center gap-3">
+                    <label class="fw-semibold">Symbol:</label>
+                    <select class="form-select" id="symbolSelect" style="width: auto;" onchange="changeSymbol()">
+                        <option value="BTCUSDT">BTC/USDT</option>
+                        <option value="ETHUSDT">ETH/USDT</option>
+                        <option value="ADAUSDT">ADA/USDT</option>
+                        <option value="DOTUSDT">DOT/USDT</option>
+                    </select>
+                    <div class="ms-auto d-flex align-items-center gap-2">
+                        <span class="text-muted">Price:</span>
+                        <span class="h6 mb-0" id="currentPrice">Loading...</span>
+                        <span class="small" id="priceChange">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TradingView Chart -->
+        <div class="card trading-panel">
+            <div class="card-body p-0">
+                <div id="tradingview_chart" class="tradingview-container"></div>
+            </div>
+        </div>
+        
+        <!-- Recent Trades -->
+        <div class="card trading-panel mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">Recent Trades</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>Side</th>
+                                <th>Quantity</th>
+                                <th>Price</th>
+                                <th>P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTradesTable">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Right Sidebar -->
+    <div class="col-lg-4">
+        <!-- Order Form -->
+        <div class="card trading-panel">
+            <div class="card-header">
+                <h6 class="mb-0">Place Order</h6>
+            </div>
+            <div class="card-body order-form">
+                <form id="orderForm">
+                    <!-- Order Type Tabs -->
+                    <ul class="nav nav-pills mb-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#buyTab" type="button">Buy</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#sellTab" type="button">Sell</button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="buyTab">
+                            <div class="mb-3">
+                                <label class="form-label">Order Type</label>
+                                <select class="form-select" id="buyOrderType">
+                                    <option value="market">Market</option>
+                                    <option value="limit">Limit</option>
+                                </select>
+                            </div>
+                            <div class="mb-3" id="buyPriceGroup" style="display: none;">
+                                <label class="form-label">Limit Price</label>
+                                <input type="number" class="form-control" id="buyPrice" step="0.01">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Quantity</label>
+                                <input type="number" class="form-control" id="buyQuantity" step="0.000001">
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted">Available: <span id="availableUSDT">0 USDT</span></small>
+                            </div>
+                            <button type="button" class="btn btn-success w-100" onclick="executeOrder('buy')">
+                                <i class="fas fa-arrow-up me-1"></i>Buy
+                            </button>
+                        </div>
+                        
+                        <div class="tab-pane fade" id="sellTab">
+                            <div class="mb-3">
+                                <label class="form-label">Order Type</label>
+                                <select class="form-select" id="sellOrderType">
+                                    <option value="market">Market</option>
+                                    <option value="limit">Limit</option>
+                                </select>
+                            </div>
+                            <div class="mb-3" id="sellPriceGroup" style="display: none;">
+                                <label class="form-label">Limit Price</label>
+                                <input type="number" class="form-control" id="sellPrice" step="0.01">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Quantity</label>
+                                <input type="number" class="form-control" id="sellQuantity" step="0.000001">
+                            </div>
+                            <div class="mb-3">
+                                <small class="text-muted">Available: <span id="availableAsset">0</span></small>
+                            </div>
+                            <button type="button" class="btn btn-danger w-100" onclick="executeOrder('sell')">
+                                <i class="fas fa-arrow-down me-1"></i>Sell
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Risk Calculator -->
+        <div class="card trading-panel">
+            <div class="card-header">
+                <h6 class="mb-0">Position Size Calculator</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Risk %</label>
+                    <input type="number" class="form-control" id="riskPercent" value="2" step="0.1" onchange="calculatePositionSize()">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Stop Loss %</label>
+                    <input type="number" class="form-control" id="stopLossPercent" value="2" step="0.1" onchange="calculatePositionSize()">
+                </div>
+                <div class="alert alert-info">
+                    <strong>Recommended Quantity:</strong><br>
+                    <span id="recommendedQuantity">0</span><br>
+                    <small class="text-muted">Max Risk: $<span id="maxRisk">0</span></small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Portfolio Balances -->
+        <div class="card trading-panel">
+            <div class="card-header">
+                <h6 class="mb-0">Portfolio Balances</h6>
+            </div>
+            <div class="card-body">
+                <div id="balancesList">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Open Positions -->
+        <div class="card trading-panel">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Open Positions</h6>
+                <button class="btn btn-sm btn-outline-primary" onclick="updatePositions()">
+                    <i class="fas fa-refresh"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="positionsList">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Price Alerts -->
+        <div class="card trading-panel">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Price Alerts</h6>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#alertModal">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="alertsList">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Alert Modal -->
+<div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Price Alert</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="alertForm">
+                    <div class="mb-3">
+                        <label class="form-label">Symbol</label>
+                        <select class="form-select" id="alertSymbol">
+                            <option value="BTCUSDT">BTC/USDT</option>
+                            <option value="ETHUSDT">ETH/USDT</option>
+                            <option value="ADAUSDT">ADA/USDT</option>
+                            <option value="DOTUSDT">DOT/USDT</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Condition</label>
+                        <select class="form-select" id="alertCondition">
+                            <option value="above">Price Above</option>
+                            <option value="below">Price Below</option>
+                            <option value="change_percent">Change %</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Value</label>
+                        <input type="number" class="form-control" id="alertValue" step="0.01" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createAlert()">Create Alert</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let socket;
+let tradingViewWidget;
+let currentSymbol = 'BTCUSDT';
+let tradingMode = 'paper';
+
+// Initialize everything when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeSocket();
+    initializeTradingView();
+    loadInitialData();
+    setupEventListeners();
+});
+
+// Socket.IO Connection
+function initializeSocket() {
+    socket = io();
+    
+    socket.on('connect', function() {
+        console.log('Connected to server');
+        socket.emit('join_trading');
+    });
+    
+    socket.on('market_data_update', function(data) {
+        updateMarketData(data);
+    });
+    
+    socket.on('price_alert_triggered', function(data) {
+        showNotification('Alert Triggered!', data.message, 'warning');
+        loadAlerts();
+    });
+    
+    socket.on('trading_mode_changed', function(data) {
+        updateTradingModeUI(data);
+    });
+    
+    socket.on('portfolio_update', function(data) {
+        updatePortfolioUI(data);
+    });
+}
+
+// TradingView Widget
+function initializeTradingView() {
+    tradingViewWidget = new TradingView.widget({
+        "autosize": true,
+        "symbol": `BINANCE:${currentSymbol}`,
+        "interval": "1H",
+        "timezone": "Etc/UTC",
+        "theme": "light",
+        "style": "1",
+        "locale": "en",
+        "toolbar_bg": "#f1f3f6",
+        "enable_publishing": false,
+        "hide_top_toolbar": false,
+        "hide_legend": false,
+        "save_image": false,
+        "container_id": "tradingview_chart",
+        "studies": [
+            "RSI@tv-basicstudies",
+            "MACD@tv-basicstudies",
+            "EMA@tv-basicstudies"
+        ]
+    });
+}
+
+// Load initial data
+function loadInitialData() {
+    loadTradingMode();
+    loadPortfolioValue();
+    loadBalances();
+    loadPositions();
+    loadAlerts();
+    loadRecentTrades();
+    updateMarketPrices();
+}
+
+// Event Listeners
+function setupEventListeners() {
+    // Order type changes
+    document.getElementById('buyOrderType').addEventListener('change', function() {
+        togglePriceInput('buy', this.value);
+    });
+    
+    document.getElementById('sellOrderType').addEventListener('change', function() {
+        togglePriceInput('sell', this.value);
+    });
+}
+
+// Trading Mode Functions
+function switchTradingMode() {
+    const isPaper = !document.getElementById('tradingModeSwitch').checked;
+    
+    fetch('/api/trading/mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({is_paper: isPaper})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            tradingMode = isPaper ? 'paper' : 'live';
+            updateTradingModeText();
+            loadBalances();
+            showNotification('Success', data.message, 'success');
+        } else {
+            showNotification('Error', data.error, 'error');
+        }
+    });
+}
+
+function updateTradingModeText() {
+    const modeText = tradingMode === 'paper' ? 'Paper Trading' : 'Live Trading';
+    document.getElementById('tradingModeText').textContent = modeText;
+}
+
+function loadTradingMode() {
+    fetch('/api/trading/mode')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const mode = data.mode;
+            tradingMode = mode.is_paper_trading ? 'paper' : 'live';
+            document.getElementById('tradingModeSwitch').checked = !mode.is_paper_trading;
+            updateTradingModeText();
+        }
+    });
+}
+
+// Symbol Change
+function changeSymbol() {
+    currentSymbol = document.getElementById('symbolSelect').value;
+    
+    // Update TradingView
+    if (tradingViewWidget) {
+        tradingViewWidget.chart().setSymbol(`BINANCE:${currentSymbol}`);
+    }
+    
+    // Update price and available balance
+    updateCurrentPrice();
+    updateAvailableBalance();
+    calculatePositionSize();
+}
+
+// Order Functions
+function togglePriceInput(side, orderType) {
+    const priceGroup = document.getElementById(`${side}PriceGroup`);
+    if (orderType === 'limit') {
+        priceGroup.style.display = 'block';
+    } else {
+        priceGroup.style.display = 'none';
+    }
+}
+
+function executeOrder(side) {
+    const orderType = document.getElementById(`${side}OrderType`).value;
+    const quantity = parseFloat(document.getElementById(`${side}Quantity`).value);
+    const price = orderType === 'limit' ? parseFloat(document.getElementById(`${side}Price`).value) : null;
+    
+    if (!quantity || quantity <= 0) {
+        showNotification('Error', 'Please enter a valid quantity', 'error');
+        return;
+    }
+    
+    if (orderType === 'limit' && (!price || price <= 0)) {
+        showNotification('Error', 'Please enter a valid price for limit order', 'error');
+        return;
+    }
+    
+    const orderData = {
+        symbol: currentSymbol,
+        side: side,
+        quantity: quantity,
+        order_type: orderType,
+        price: price
+    };
+    
+    fetch('/api/trading/execute', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(orderData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Success', `${side.toUpperCase()} order executed successfully`, 'success');
+            loadBalances();
+            loadPositions();
+            loadRecentTrades();
+            clearOrderForm(side);
+        } else {
+            showNotification('Error', data.error, 'error');
+        }
+    })
+    .catch(error => {
+        showNotification('Error', 'Failed to execute order', 'error');
+    });
+}
+
+function clearOrderForm(side) {
+    document.getElementById(`${side}Quantity`).value = '';
+    document.getElementById(`${side}Price`).value = '';
+}
+
+// Position Size Calculator
+function calculatePositionSize() {
+    const riskPercent = parseFloat(document.getElementById('riskPercent').value) || 2;
+    const stopLossPercent = parseFloat(document.getElementById('stopLossPercent').value) || 2;
+    
+    // S'assurer que currentSymbol est défini et a une valeur
+    if (!currentSymbol) {
+        showNotification('Erreur', 'Veuillez d\'abord sélectionner un symbole.', 'error');
+        return;
+    }
+
+    fetch('/api/risk/position-size', { // Endpoint défini dans app_enhanced.py
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            symbol: currentSymbol,
+            risk_percent: riskPercent,
+            stop_loss_percent: stopLossPercent
+            // Le backend utilise aussi le capital actuel, qui est récupéré côté serveur via get_portfolio_value
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('recommendedQuantity').textContent = (data.recommended_quantity || 0).toFixed(6);
+            document.getElementById('maxRisk').textContent = (data.risk_amount || 0).toFixed(2);
+            // On pourrait aussi afficher data.position_value et data.stop_loss_price si des éléments existent pour cela.
+        } else {
+            showNotification('Erreur Calcul', data.error || 'Impossible de calculer la taille de position.', 'error');
+            document.getElementById('recommendedQuantity').textContent = '0';
+            document.getElementById('maxRisk').textContent = '0';
+        }
+    })
+    .catch(error => {
+        console.error('Erreur lors du calcul de la taille de position:', error);
+        showNotification('Erreur', 'Erreur de communication lors du calcul.', 'error');
+    });
+}
+
+// Data Loading Functions
+function loadPortfolioValue() {
+    fetch('/api/portfolio/value')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const value = tradingMode === 'paper' ? data.paper_value : data.real_value;
+            document.getElementById('portfolioValue').textContent = `$${value.toFixed(2)}`;
+        }
+    });
+}
+
+function loadBalances() {
+    fetch('/api/portfolio/balances')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const balances = tradingMode === 'paper' ? data.paper_balances : data.real_balances;
+            updateBalancesUI(balances);
+            updateAvailableBalance();
+        }
+    });
+}
+
+function updateBalancesUI(balances) {
+    const container = document.getElementById('balancesList');
+    container.innerHTML = '';
+    
+    for (const [asset, balance] of Object.entries(balances)) {
+        if (balance > 0.001) {
+            const item = document.createElement('div');
+            item.className = 'balance-item';
+            item.innerHTML = `
+                <span class="fw-semibold">${asset}</span>
+                <span>${balance.toFixed(6)}</span>
+            `;
+            container.appendChild(item);
+        }
+    }
+}
+
+function updateAvailableBalance() {
+    fetch('/api/portfolio/balances')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const balances = tradingMode === 'paper' ? data.paper_balances : data.real_balances;
+            const baseAsset = currentSymbol.replace('USDT', '');
+            
+            document.getElementById('availableUSDT').textContent = `${(balances.USDT || 0).toFixed(2)} USDT`;
+            document.getElementById('availableAsset').textContent = `${(balances[baseAsset] || 0).toFixed(6)} ${baseAsset}`;
+        }
+    });
+}
+
+function loadPositions() {
+    fetch('/api/portfolio/positions')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updatePositionsUI(data.positions);
+        }
+    });
+}
+
+function updatePositionsUI(positions) {
+    const container = document.getElementById('positionsList');
+    container.innerHTML = '';
+    
+    if (positions.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center">No open positions</div>';
+        return;
+    }
+    
+    positions.forEach(position => {
+        const pnlClass = position.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+        const sideClass = position.side === 'long' ? 'long' : 'short';
+        
+        const item = document.createElement('div');
+        item.className = `card position-card ${sideClass} mb-2`;
+        item.innerHTML = `
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${position.symbol}</strong>
+                        <span class="badge bg-${position.side === 'long' ? 'success' : 'danger'} ms-1">${position.side.toUpperCase()}</span>
+                    </div>
+                    <div class="text-end">
+                        <div class="${pnlClass}">${position.pnl >= 0 ? '+' : ''}${position.pnl.toFixed(2)}</div>
+                        <small class="text-muted">${position.quantity.toFixed(6)}</small>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function loadAlerts() {
+    fetch('/api/alerts')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateAlertsUI(data.alerts);
+        }
+    });
+}
+
+function updateAlertsUI(alerts) {
+    const container = document.getElementById('alertsList');
+    container.innerHTML = '';
+    
+    if (alerts.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center">No active alerts</div>';
+        return;
+    }
+    
+    alerts.forEach(alert => {
+        const item = document.createElement('div');
+        item.className = `alert-item card mb-2 ${alert.triggered ? 'triggered' : ''}`;
+        item.innerHTML = `
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${alert.symbol}</strong>
+                        <div class="small text-muted">${alert.condition} ${alert.value}</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteAlert('${alert.id}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function loadRecentTrades() {
+    fetch('/api/trades/recent')
+    .then(response => response.json())
+    .then(data => {
+        updateRecentTradesUI(data);
+    });
+}
+
+function updateRecentTradesUI(trades) {
+    const tbody = document.getElementById('recentTradesTable');
+    tbody.innerHTML = '';
+    
+    trades.slice(0, 10).forEach(trade => {
+        const pnlClass = trade.pnl >= 0 ? 'text-success' : 'text-danger';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${new Date(trade.timestamp).toLocaleTimeString()}</td>
+            <td>${trade.symbol}</td>
+            <td><span class="badge bg-${trade.side === 'buy' ? 'success' : 'danger'}">${trade.side.toUpperCase()}</span></td>
+            <td>${trade.quantity.toFixed(6)}</td>
+            <td>$${trade.price.toFixed(2)}</td>
+            <td class="${pnlClass}">${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Price Alert Functions
+function createAlert() {
+    const symbol = document.getElementById('alertSymbol').value;
+    const condition = document.getElementById('alertCondition').value;
+    const value = parseFloat(document.getElementById('alertValue').value);
+    
+    if (!value || value <= 0) {
+        showNotification('Error', 'Please enter a valid value', 'error');
+        return;
+    }
+    
+    fetch('/api/alerts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({symbol, condition, value})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Success', 'Alert created successfully', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('alertModal')).hide();
+            loadAlerts();
+            document.getElementById('alertForm').reset();
+        } else {
+            showNotification('Error', data.error, 'error');
+        }
+    });
+}
+
+function deleteAlert(alertId) {
+    if (!confirm('Are you sure you want to delete this alert?')) return;
+    
+    fetch(`/api/alerts/${alertId}`, {method: 'DELETE'})
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Success', 'Alert deleted successfully', 'success');
+            loadAlerts();
+        } else {
+            showNotification('Error', data.error, 'error');
+        }
+    });
+}
+
+// Market Data Functions
+function updateMarketPrices() {
+    const symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOTUSDT'];
+    
+    fetch(`/api/market/prices?symbols=${symbols.join(',')}`)
+    .then(response => response.json())
+    .then(data => {
+        // Update current price display
+        updateCurrentPrice();
+    });
+}
+
+function updateCurrentPrice() {
+    fetch(`/api/market/ticker/${currentSymbol}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.price) {
+            document.getElementById('currentPrice').textContent = `$${data.price.toFixed(2)}`;
+            
+            if (data.change_24h !== undefined) {
+                const changeElement = document.getElementById('priceChange');
+                const changePercent = data.change_24h;
+                changeElement.textContent = `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
+                changeElement.className = changePercent >= 0 ? 'small text-success' : 'small text-danger';
+            }
+        }
+    });
+}
+
+function updateMarketData(data) {
+    // Update current symbol price if it matches
+    if (data[currentSymbol]) {
+        const symbolData = data[currentSymbol];
+        document.getElementById('currentPrice').textContent = `$${symbolData.price.toFixed(2)}`;
+        
+        const changeElement = document.getElementById('priceChange');
+        const changePercent = symbolData.change_24h;
+        changeElement.textContent = `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
+        changeElement.className = changePercent >= 0 ? 'small text-success' : 'small text-danger';
+    }
+}
+
+// Utility Functions
+function syncRealBalances() {
+    fetch('/api/balance/sync', {method: 'POST'})
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Success', 'Real balances synced successfully', 'success');
+            loadBalances();
+        } else {
+            showNotification('Error', data.error, 'error');
+        }
+    });
+}
+
+function updatePositions() {
+    loadPositions();
+    showNotification('Info', 'Positions updated', 'info');
+}
+
+function showNotification(title, message, type) {
+    // Create toast notification
+    const toastHtml = `
+        <div class="toast align-items-center text-bg-${type === 'error' ? 'danger' : type} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <strong>${title}:</strong> ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+    
+    const toastContainer = document.querySelector('.toast-container') || createToastContainer();
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    const toast = new bootstrap.Toast(toastContainer.lastElementChild);
+    toast.show();
+}
+
+function createToastContainer() {
+    const container = document.createElement('div');
+    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+    container.style.zIndex = '1055';
+    document.body.appendChild(container);
+    return container;
+}
+
+// Auto-refresh data every 30 seconds
+setInterval(() => {
+    updateMarketPrices();
+    loadPortfolioValue();
+    if (tradingMode === 'live') {
+        loadBalances();
+    }
+}, 30000);
+</script>
+{% endblock %}

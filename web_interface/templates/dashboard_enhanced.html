@@ -1,0 +1,905 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AlphaBeta808 Trading{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .metric-card {
+        background: white;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        border: 1px solid #e3e8ef;
+        height: 100%;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    .metric-label {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
+    
+    .metric-change {
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    
+    .metric-change.positive {
+        color: var(--success-color);
+    }
+    
+    .metric-change.negative {
+        color: var(--danger-color);
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 400px;
+    }
+    
+    .status-badge {
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    
+    .status-running {
+        background-color: rgba(5, 150, 105, 0.1);
+        color: var(--success-color);
+    }
+    
+    .status-stopped {
+        background-color: rgba(220, 38, 38, 0.1);
+        color: var(--danger-color);
+    }
+    
+    .market-ticker {
+        background: white;
+        border-radius: 0.75rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: transform 0.2s ease;
+    }
+    
+    .market-ticker:hover {
+        transform: scale(1.02);
+    }
+    
+    .ticker-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .ticker-price {
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+    
+    .ticker-change {
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    
+    .price-positive {
+        color: var(--success-color);
+    }
+    
+    .price-negative {
+        color: var(--danger-color);
+    }
+    
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+        display: inline-block;
+    }
+    
+    .status-online {
+        background-color: var(--success-color);
+    }
+    
+    .status-offline {
+        background-color: var(--danger-color);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Status Bar -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <span class="status-indicator" id="botStatusIndicator"></span>
+                        <span class="fw-semibold me-3">Bot Status:</span>
+                        <span class="status-badge" id="botStatusBadge">Chargement...</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success btn-sm" id="startBotBtn" onclick="startBot()">
+                            <i class="fas fa-play me-1"></i>Démarrer
+                        </button>
+                        <button class="btn btn-danger btn-sm" id="stopBotBtn" onclick="stopBot()">
+                            <i class="fas fa-stop me-1"></i>Arrêter
+                        </button>
+                        <button class="btn btn-info btn-sm" onclick="refreshData()">
+                            <i class="fas fa-refresh me-1"></i>Actualiser
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Market Ticker -->
+<div class="market-ticker">
+    <div class="d-flex w-100 justify-content-around">
+        <div class="ticker-item" data-symbol="BTCUSDT">
+            <span class="fw-bold">BTC/USDT</span>
+            <span class="ticker-price" id="ticker-BTCUSDT">--</span>
+            <span class="ticker-change" id="change-BTCUSDT">--</span>
+        </div>
+        <div class="ticker-item" data-symbol="ETHUSDT">
+            <span class="fw-bold">ETH/USDT</span>
+            <span class="ticker-price" id="ticker-ETHUSDT">--</span>
+            <span class="ticker-change" id="change-ETHUSDT">--</span>
+        </div>
+        <div class="ticker-item" data-symbol="ADAUSDT">
+            <span class="fw-bold">ADA/USDT</span>
+            <span class="ticker-price" id="ticker-ADAUSDT">--</span>
+            <span class="ticker-change" id="change-ADAUSDT">--</span>
+        </div>
+        <div class="ticker-item" data-symbol="DOTUSDT">
+            <span class="fw-bold">DOT/USDT</span>
+            <span class="ticker-price" id="ticker-DOTUSDT">--</span>
+            <span class="ticker-change" id="change-DOTUSDT">--</span>
+        </div>
+    </div>
+</div>
+
+<!-- Metrics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">P&L Total</div>
+                    <div class="metric-value text-primary" id="totalPnl">$0.00</div>
+                    <div class="metric-change" id="totalPnlChange">+0.00%</div>
+                </div>
+                <div class="text-primary">
+                    <i class="fas fa-dollar-sign fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">Trades Aujourd'hui</div>
+                    <div class="metric-value text-info" id="dailyTrades">0</div>
+                    <div class="metric-change" id="dailyPnl">$0.00</div>
+                </div>
+                <div class="text-info">
+                    <i class="fas fa-exchange-alt fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">Taux de Réussite</div>
+                    <div class="metric-value text-success" id="winRate">0%</div>
+                    <div class="metric-change" id="totalTrades">0 trades</div>
+                </div>
+                <div class="text-success">
+                    <i class="fas fa-target fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">Positions Actives</div>
+                    <div class="metric-value text-warning" id="activePositions">0</div>
+                    <div class="metric-change" id="modelsLoaded">0 modèles</div>
+                </div>
+                <div class="text-warning">
+                    <i class="fas fa-chart-line fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trading Mode and Portfolio Overview -->
+<div class="row mb-4">
+    <!-- Trading Mode Card -->
+    <div class="col-md-4 mb-3">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">
+                    <i class="fas fa-exchange-alt me-2"></i>
+                    Mode de Trading
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="fw-bold">Mode Actuel:</span>
+                    <span class="badge bg-secondary" id="currentTradingMode">Paper Trading</span>
+                </div>
+                <div class="btn-group w-100" role="group">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="switchTradingMode('paper')" id="paperModeBtn">
+                        Paper
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="switchTradingMode('live')" id="liveModeBtn">
+                        Live
+                    </button>
+                </div>
+                <div class="mt-3">
+                    <a href="/trading" class="btn btn-primary btn-sm w-100">
+                        <i class="fas fa-chart-line me-1"></i>
+                        Interface Avancée
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Portfolio Overview -->
+    <div class="col-md-4 mb-3">
+        <div class="card border-success">
+            <div class="card-header bg-success text-white">
+                <h6 class="mb-0">
+                    <i class="fas fa-wallet me-2"></i>
+                    Portfolio
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Valeur Totale:</span>
+                    <span class="fw-bold text-success" id="portfolioValue">$0.00</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Cash:</span>
+                    <span id="portfolioCash">$0.00</span>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span>Positions:</span>
+                    <span id="activePositionsCount">0</span>
+                </div>
+                <a href="/portfolio" class="btn btn-success btn-sm w-100">
+                    <i class="fas fa-eye me-1"></i>
+                    Voir Détails
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Alerts Overview -->
+    <div class="col-md-4 mb-3">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h6 class="mb-0">
+                    <i class="fas fa-bell me-2"></i>
+                    Alertes Prix
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Alertes Actives:</span>
+                    <span class="fw-bold" id="activeAlerts">0</span>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span>Déclenchées Aujourd'hui:</span>
+                    <span id="todayTriggered">0</span>
+                </div>
+                <div class="btn-group w-100" role="group">
+                    <button class="btn btn-warning btn-sm" onclick="showAddAlertModal()">
+                        <i class="fas fa-plus me-1"></i>
+                        Ajouter
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm" onclick="loadAlertsModal()">
+                        <i class="fas fa-list me-1"></i>
+                        Gérer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts and Market Data -->
+<div class="row mb-4">
+    <!-- Performance Chart -->
+    <div class="col-lg-8 mb-3">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Performance en Temps Réel</h5>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-primary" onclick="changeChartPeriod('1D')">1J</button>
+                    <button type="button" class="btn btn-outline-primary active" onclick="changeChartPeriod('1W')">1S</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="changeChartPeriod('1M')">1M</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Market Data -->
+    <div class="col-lg-4 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Données de Marché</h5>
+            </div>
+            <div class="card-body">
+                <div id="marketDataContainer">
+                    <!-- Market data will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Trades and System Info -->
+<div class="row">
+    <!-- Recent Trades -->
+    <div class="col-lg-8 mb-3">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Trades Récents</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadRecentTrades()">
+                    <i class="fas fa-refresh"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Symbole</th>
+                                <th>Type</th>
+                                <th>Quantité</th>
+                                <th>Prix</th>
+                                <th>P&L</th>
+                                <th>Modèle</th>
+                                <th>Heure</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTradesTable">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">
+                                    <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+                                    Aucun trade récent
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- System Information -->
+    <div class="col-lg-4 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Informations Système</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <small class="text-muted">Uptime</small>
+                    <div class="fw-semibold" id="systemUptime">0:00:00</div>
+                </div>
+                
+                <div class="mb-3">
+                    <small class="text-muted">Exchanges Connectés</small>
+                    <div id="connectedExchanges">
+                        <span class="badge bg-success">Binance</span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <small class="text-muted">Symboles Actifs</small>
+                    <div id="activeSymbols">
+                        <span class="badge bg-info me-1">BTCUSDT</span>
+                        <span class="badge bg-info me-1">ETHUSDT</span>
+                        <span class="badge bg-info me-1">ADAUSDT</span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <small class="text-muted">Erreurs</small>
+                    <div class="fw-semibold text-success" id="errorCount">0</div>
+                </div>
+                
+                <hr>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="window.location.href='{{ url_for('optimization') }}'">
+                        <i class="fas fa-cog me-1"></i>Optimisation
+                    </button>
+                    <button class="btn btn-outline-info btn-sm" onclick="window.location.href='{{ url_for('reports') }}'">
+                        <i class="fas fa-chart-bar me-1"></i>Rapports
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<!-- Add Alert Modal -->
+<div class="modal fade" id="addAlertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajouter une Alerte Prix</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addAlertForm">
+                    <div class="mb-3">
+                        <label class="form-label">Symbole</label>
+                        <select class="form-select" id="alertSymbol" required>
+                            <option value="">Sélectionner un symbole</option>
+                            <option value="BTCUSDT">BTC/USDT</option>
+                            <option value="ETHUSDT">ETH/USDT</option>
+                            <option value="ADAUSDT">ADA/USDT</option>
+                            <option value="DOTUSDT">DOT/USDT</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type d'Alerte</label>
+                        <select class="form-select" id="alertType" required>
+                            <option value="above">Prix au-dessus de</option>
+                            <option value="below">Prix en-dessous de</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Prix Cible</label>
+                        <input type="number" class="form-control" id="alertPrice" step="0.00001" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Message (optionnel)</label>
+                        <input type="text" class="form-control" id="alertMessage" placeholder="Message personnalisé">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-warning" onclick="saveAlert()">Créer l'Alerte</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Portfolio Modal -->
+<div class="modal fade" id="portfolioModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Détails du Portfolio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="portfolioDetails">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Chargement...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Variables globales
+    let performanceChart = null;
+    let currentChartPeriod = '1W';
+    
+    // Initialisation
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeCharts();
+        loadInitialData();
+        
+        // Mise à jour périodique des données de marché
+        setInterval(updateMarketTicker, 5000);
+    });
+    
+    // Gestion des mises à jour temps réel via WebSocket
+    window.handleStatusUpdate = function(data) {
+        updateSystemMetrics(data);
+    };
+    
+    window.handleMarketDataUpdate = function(data) {
+        updateMarketData(data);
+    };
+    
+    // Initialisation des graphiques
+    function initializeCharts() {
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        
+        performanceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'P&L Total',
+                    data: [],
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            display: true,
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
+    }
+    
+    // Chargement des données initiales
+    async function loadInitialData() {
+        try {
+            await loadSystemStatus();
+            await loadRecentTrades();
+            await loadPerformanceData();
+            await loadTradingMode();
+            await loadPortfolioData();
+            await loadAlertsData();
+            
+        } catch (error) {
+            console.error('Erreur lors du chargement initial:', error);
+            showToast('Erreur lors du chargement des données', 'error');
+        }
+    }
+    
+    // Chargement du statut système
+    async function loadSystemStatus() {
+        try {
+            const response = await apiCall('/api/system/status');
+            updateSystemMetrics(response);
+        } catch (error) {
+            console.error('Erreur lors du chargement du statut système:', error);
+        }
+    }
+    
+    // Mise à jour des métriques système
+    function updateSystemMetrics(data) {
+        const systemStatus = data.system_status || {};
+        const tradingStats = data.trading_stats || {};
+        
+        // Statut du bot
+        const botStatusIndicator = document.getElementById('botStatusIndicator');
+        const botStatusBadge = document.getElementById('botStatusBadge');
+        
+        if (systemStatus.bot_running) {
+            botStatusIndicator.className = 'status-indicator status-online';
+            botStatusBadge.className = 'status-badge status-running';
+            botStatusBadge.textContent = 'En cours d\'exécution';
+        } else {
+            botStatusIndicator.className = 'status-indicator status-offline';
+            botStatusBadge.className = 'status-badge status-stopped';
+            botStatusBadge.textContent = 'Arrêté';
+        }
+        
+        // Métriques de trading
+        document.getElementById('totalPnl').textContent = formatCurrency(tradingStats.total_pnl || 0);
+        document.getElementById('dailyTrades').textContent = tradingStats.daily_trades || 0;
+        document.getElementById('dailyPnl').textContent = formatCurrency(tradingStats.daily_pnl || 0);
+        document.getElementById('winRate').textContent = formatPercentage(tradingStats.win_rate || 0);
+        document.getElementById('totalTrades').textContent = (tradingStats.total_trades || 0) + ' trades';
+        document.getElementById('activePositions').textContent = tradingStats.active_positions || 0;
+        document.getElementById('modelsLoaded').textContent = (systemStatus.models_loaded || 0) + ' modèles';
+        
+        // Informations système
+        document.getElementById('systemUptime').textContent = systemStatus.uptime || '0:00:00';
+        document.getElementById('errorCount').textContent = systemStatus.errors_count || 0;
+        
+        // Changements de couleur pour les métriques
+        updateMetricChange('totalPnlChange', tradingStats.total_pnl_change || 0);
+    }
+    
+    // Mise à jour du ticker de marché
+    async function updateMarketTicker() {
+        try {
+            const symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOTUSDT'];
+            const response = await apiCall('/api/market/prices?symbols=' + symbols.join(','));
+            
+            symbols.forEach(symbol => {
+                const data = response[symbol];
+                if (data) {
+                    const priceElement = document.getElementById('ticker-' + symbol);
+                    const changeElement = document.getElementById('change-' + symbol);
+                    
+                    if (priceElement) {
+                        priceElement.textContent = formatCurrency(data.price);
+                    }
+                    
+                    if (changeElement) {
+                        const change = data.change_24h || 0;
+                        changeElement.textContent = formatPercentage(change);
+                        changeElement.className = 'ticker-change ' + (change >= 0 ? 'price-positive' : 'price-negative');
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Erreur lors de la mise à jour du ticker:', error);
+        }
+    }
+    
+    // Chargement des trades récents
+    async function loadRecentTrades() {
+        try {
+            const response = await apiCall('/api/trades/recent');
+            const tbody = document.getElementById('recentTradesTable');
+            
+            if (response.trades && response.trades.length > 0) {
+                tbody.innerHTML = response.trades.map(trade => 
+                    '<tr>' +
+                        '<td><span class="badge bg-primary">' + trade.symbol + '</span></td>' +
+                        '<td><span class="badge ' + (trade.side === 'BUY' ? 'bg-success' : 'bg-danger') + '">' + trade.side + '</span></td>' +
+                        '<td>' + formatNumber(trade.quantity) + '</td>' +
+                        '<td>' + formatCurrency(trade.price) + '</td>' +
+                        '<td class="' + (trade.pnl >= 0 ? 'text-success' : 'text-danger') + '">' + formatCurrency(trade.pnl) + '</td>' +
+                        '<td><small class="text-muted">' + (trade.model || 'N/A') + '</small></td>' +
+                        '<td><small class="text-muted">' + formatDateTime(trade.timestamp) + '</small></td>' +
+                    '</tr>'
+                ).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted"><i class="fas fa-chart-line fa-2x mb-2"></i><br>Aucun trade récent</td></tr>';
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des trades récents:', error);
+        }
+    }
+    
+    // Chargement des données de performance
+    async function loadPerformanceData() {
+        try {
+            const days = currentChartPeriod === '1D' ? 1 : currentChartPeriod === '1W' ? 7 : 30;
+            const response = await apiCall('/api/performance/history?days=' + days);
+            
+            if (response.performance && performanceChart) {
+                const performance = response.performance.reverse();
+                const labels = performance.map(p => new Date(p.date).toLocaleDateString('fr-FR'));
+                const data = performance.map(p => p.total_pnl || 0);
+                
+                performanceChart.data.labels = labels;
+                performanceChart.data.datasets[0].data = data;
+                performanceChart.update();
+            }
+            
+        } catch (error) {
+            console.error('Erreur lors du chargement des performances:', error);
+        }
+    }
+    
+    // Chargement du mode de trading
+    async function loadTradingMode() {
+        try {
+            const response = await apiCall('/api/trading/mode');
+            const modeElement = document.getElementById('currentTradingMode');
+            const paperBtn = document.getElementById('paperModeBtn');
+            const liveBtn = document.getElementById('liveModeBtn');
+            
+            if (response.mode === 'live') {
+                modeElement.textContent = 'Live Trading';
+                modeElement.className = 'badge bg-danger';
+                paperBtn.className = 'btn btn-outline-secondary btn-sm';
+                liveBtn.className = 'btn btn-danger btn-sm';
+            } else {
+                modeElement.textContent = 'Paper Trading';
+                modeElement.className = 'badge bg-secondary';
+                paperBtn.className = 'btn btn-secondary btn-sm';
+                liveBtn.className = 'btn btn-outline-primary btn-sm';
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement du mode de trading:', error);
+        }
+    }
+    
+    // Chargement des données de portfolio
+    async function loadPortfolioData() {
+        try {
+            const valueResponse = await apiCall('/api/portfolio/value');
+            const balancesResponse = await apiCall('/api/portfolio/balances');
+            const positionsResponse = await apiCall('/api/portfolio/positions');
+            
+            document.getElementById('portfolioValue').textContent = formatCurrency(valueResponse.total_value || 0);
+            document.getElementById('portfolioCash').textContent = formatCurrency(valueResponse.cash_balance || 0);
+            document.getElementById('activePositionsCount').textContent = positionsResponse.positions ? positionsResponse.positions.length : 0;
+            
+        } catch (error) {
+            console.error('Erreur lors du chargement du portfolio:', error);
+        }
+    }
+    
+    // Chargement des données d'alertes
+    async function loadAlertsData() {
+        try {
+            const response = await apiCall('/api/alerts');
+            const alerts = response.alerts || [];
+            const activeAlerts = alerts.filter(alert => alert.is_active).length;
+            const todayTriggered = alerts.filter(alert => {
+                if (!alert.triggered_at) return false;
+                const today = new Date().toDateString();
+                const triggeredDate = new Date(alert.triggered_at).toDateString();
+                return today === triggeredDate;
+            }).length;
+            
+            document.getElementById('activeAlerts').textContent = activeAlerts;
+            document.getElementById('todayTriggered').textContent = todayTriggered;
+            
+        } catch (error) {
+            console.error('Erreur lors du chargement des alertes:', error);
+        }
+    }
+    
+    // Changement de période du graphique
+    function changeChartPeriod(period) {
+        currentChartPeriod = period;
+        
+        // Mettre à jour les boutons actifs
+        document.querySelectorAll('.btn-group button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        // Recharger les données selon la période
+        loadPerformanceData();
+    }
+    
+    // Contrôle du bot
+    async function startBot() {
+        try {
+            const response = await apiCall('/api/trading/start', 'POST');
+            if (response.success) {
+                showToast('Bot démarré avec succès', 'success');
+                loadSystemStatus();
+            }
+        } catch (error) {
+            console.error('Erreur lors du démarrage du bot:', error);
+            showToast('Erreur lors du démarrage du bot', 'error');
+        }
+    }
+    
+    async function stopBot() {
+        try {
+            const response = await apiCall('/api/trading/stop', 'POST');
+            if (response.success) {
+                showToast('Bot arrêté avec succès', 'info');
+                loadSystemStatus();
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'arrêt du bot:', error);
+            showToast('Erreur lors de l\'arrêt du bot', 'error');
+        }
+    }
+    
+    // Actualisation des données
+    function refreshData() {
+        loadInitialData();
+        showToast('Données actualisées', 'info');
+    }
+    
+    // Changement de mode de trading
+    async function switchTradingMode(mode) {
+        try {
+            const response = await apiCall('/api/trading/mode', 'POST', { mode: mode });
+            if (response.success) {
+                showToast('Mode ' + mode + ' activé', 'success');
+                loadTradingMode();
+            }
+        } catch (error) {
+            console.error('Erreur lors du changement de mode:', error);
+            showToast('Erreur lors du changement de mode', 'error');
+        }
+    }
+    
+    // Gestion des alertes
+    function showAddAlertModal() {
+        const modal = new bootstrap.Modal(document.getElementById('addAlertModal'));
+        modal.show();
+    }
+    
+    async function saveAlert() {
+        const alertData = {
+            symbol: document.getElementById('alertSymbol').value,
+            alert_type: document.getElementById('alertType').value,
+            price: parseFloat(document.getElementById('alertPrice').value),
+            message: document.getElementById('alertMessage').value
+        };
+        
+        try {
+            const response = await apiCall('/api/alerts', 'POST', alertData);
+            if (response.success) {
+                showToast('Alerte créée avec succès', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('addAlertModal')).hide();
+                document.getElementById('addAlertForm').reset();
+                loadAlertsData();
+            }
+        } catch (error) {
+            console.error('Erreur lors de la création de l\'alerte:', error);
+            showToast('Erreur lors de la création de l\'alerte', 'error');
+        }
+    }
+    
+    function loadAlertsModal() {
+        window.location.href = '/alerts';
+    }
+    
+    // Mise à jour des changements de métriques
+    function updateMetricChange(elementId, value) {
+        const element = document.getElementById(elementId);
+        if (element && value !== undefined) {
+            const changeClass = value >= 0 ? 'positive' : 'negative';
+            element.className = 'metric-change ' + changeClass;
+            element.textContent = formatPercentage(value);
+        }
+    }
+</script>
+{% endblock %}

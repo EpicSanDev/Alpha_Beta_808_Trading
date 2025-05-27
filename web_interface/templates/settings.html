@@ -1,0 +1,1084 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - AlphaBeta808{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 text-gradient">Settings</h1>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-primary" onclick="saveAllSettings()">
+                        <i class="fas fa-save"></i> Save All
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="resetToDefaults()">
+                        <i class="fas fa-undo"></i> Reset to Defaults
+                    </button>
+                    <button type="button" class="btn btn-outline-info" onclick="exportSettings()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                    <button type="button" class="btn btn-outline-warning" onclick="importSettings()">
+                        <i class="fas fa-upload"></i> Import
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Settings Navigation -->
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Settings Categories</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a class="list-group-item list-group-item-action active" data-bs-toggle="list" href="#trading-settings">
+                        <i class="fas fa-chart-line me-2"></i>Trading
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#risk-settings">
+                        <i class="fas fa-shield-alt me-2"></i>Risk Management
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#api-settings">
+                        <i class="fas fa-key me-2"></i>API Configuration
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#notification-settings">
+                        <i class="fas fa-bell me-2"></i>Notifications
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#model-settings">
+                        <i class="fas fa-brain me-2"></i>Model Configuration
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#system-settings">
+                        <i class="fas fa-cog me-2"></i>System
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#backup-settings">
+                        <i class="fas fa-database me-2"></i>Backup & Recovery
+                    </a>
+                    <a class="list-group-item list-group-item-action" data-bs-toggle="list" href="#user-settings">
+                        <i class="fas fa-user me-2"></i>User Account
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Content -->
+        <div class="col-md-9">
+            <div class="tab-content">
+                <!-- Trading Settings -->
+                <div class="tab-pane fade show active" id="trading-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Trading Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="trading-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="trading-mode" class="form-label">Trading Mode</label>
+                                        <select class="form-select" id="trading-mode">
+                                            <option value="live">Live Trading</option>
+                                            <option value="paper" selected>Paper Trading</option>
+                                            <option value="backtest">Backtest Only</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="trading-frequency" class="form-label">Trading Frequency</label>
+                                        <select class="form-select" id="trading-frequency">
+                                            <option value="1m">1 Minute</option>
+                                            <option value="5m" selected>5 Minutes</option>
+                                            <option value="15m">15 Minutes</option>
+                                            <option value="1h">1 Hour</option>
+                                            <option value="4h">4 Hours</option>
+                                            <option value="1d">Daily</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="base-currency" class="form-label">Base Currency</label>
+                                        <select class="form-select" id="base-currency">
+                                            <option value="USDT" selected>USDT</option>
+                                            <option value="BUSD">BUSD</option>
+                                            <option value="USDC">USDC</option>
+                                            <option value="BTC">BTC</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="trading-pairs" class="form-label">Active Trading Pairs</label>
+                                        <select class="form-select" id="trading-pairs-config" multiple size="4">
+                                            <option value="BTCUSDT" selected>BTCUSDT</option>
+                                            <option value="ETHUSDT" selected>ETHUSDT</option>
+                                            <option value="ADAUSDT" selected>ADAUSDT</option>
+                                            <option value="DOTUSDT" selected>DOTUSDT</option>
+                                            <option value="LINKUSDT">LINKUSDT</option>
+                                            <option value="BNBUSDT">BNBUSDT</option>
+                                            <option value="SOLUSDT">SOLUSDT</option>
+                                            <option value="AVAXUSDT">AVAXUSDT</option>
+                                        </select>
+                                        <small class="form-text text-muted">Hold Ctrl/Cmd to select multiple pairs</small>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="max-positions" class="form-label">Max Open Positions</label>
+                                        <input type="number" class="form-control" id="max-positions" value="5" min="1" max="20">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="signal-threshold" class="form-label">Signal Threshold</label>
+                                        <input type="number" class="form-control" id="signal-threshold" value="0.6" min="0.1" max="1.0" step="0.01">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="min-trade-interval" class="form-label">Min Trade Interval (minutes)</label>
+                                        <input type="number" class="form-control" id="min-trade-interval" value="30" min="1">
+                                    </div>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="auto-trading" checked>
+                                    <label class="form-check-label" for="auto-trading">
+                                        Enable Automatic Trading
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="weekend-trading">
+                                    <label class="form-check-label" for="weekend-trading">
+                                        Allow Weekend Trading
+                                    </label>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save Trading Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Risk Management Settings -->
+                <div class="tab-pane fade" id="risk-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Risk Management</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="risk-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="position-size-pct" class="form-label">Position Size (%)</label>
+                                        <input type="number" class="form-control" id="position-size-pct" value="2.0" min="0.1" max="10.0" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="max-portfolio-risk" class="form-label">Max Portfolio Risk (%)</label>
+                                        <input type="number" class="form-control" id="max-portfolio-risk" value="20.0" min="1.0" max="50.0" step="0.5">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="max-daily-loss" class="form-label">Max Daily Loss (%)</label>
+                                        <input type="number" class="form-control" id="max-daily-loss" value="5.0" min="1.0" max="20.0" step="0.5">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="stop-loss-pct" class="form-label">Default Stop Loss (%)</label>
+                                        <input type="number" class="form-control" id="stop-loss-pct" value="2.0" min="0.5" max="10.0" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="take-profit-pct" class="form-label">Default Take Profit (%)</label>
+                                        <input type="number" class="form-control" id="take-profit-pct" value="4.0" min="1.0" max="20.0" step="0.1">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="trailing-stop" class="form-label">Trailing Stop (%)</label>
+                                        <input type="number" class="form-control" id="trailing-stop" value="1.0" min="0.1" max="5.0" step="0.1">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="correlation-limit" class="form-label">Max Correlation Exposure</label>
+                                        <input type="number" class="form-control" id="correlation-limit" value="0.7" min="0.1" max="1.0" step="0.05">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="drawdown-limit" class="form-label">Max Drawdown Limit (%)</label>
+                                        <input type="number" class="form-control" id="drawdown-limit" value="15.0" min="5.0" max="30.0" step="0.5">
+                                    </div>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="emergency-stop" checked>
+                                    <label class="form-check-label" for="emergency-stop">
+                                        Enable Emergency Stop (Auto-close all positions on excessive loss)
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="risk-scaling" checked>
+                                    <label class="form-check-label" for="risk-scaling">
+                                        Enable Risk Scaling (Reduce position sizes during drawdown)
+                                    </label>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save Risk Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Configuration -->
+                <div class="tab-pane fade" id="api-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">API Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="api-form">
+                                <div class="mb-3">
+                                    <label for="exchange-select" class="form-label">Exchange</label>
+                                    <select class="form-select" id="exchange-select">
+                                        <option value="binance" selected>Binance</option>
+                                        <option value="binance_us">Binance US</option>
+                                        <option value="kraken">Kraken</option>
+                                        <option value="coinbase">Coinbase Pro</option>
+                                        <option value="ftx">FTX</option>
+                                    </select>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="api-key" class="form-label">API Key</label>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="api-key" placeholder="Enter API Key">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('api-key')">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="api-secret" class="form-label">API Secret</label>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="api-secret" placeholder="Enter API Secret">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('api-secret')">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="api-passphrase" class="form-label">Passphrase (if required)</label>
+                                        <input type="password" class="form-control" id="api-passphrase" placeholder="Enter Passphrase">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="api-sandbox" class="form-label">Environment</label>
+                                        <select class="form-select" id="api-sandbox">
+                                            <option value="false">Production</option>
+                                            <option value="true" selected>Sandbox/Testnet</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="api-timeout" class="form-label">API Timeout (seconds)</label>
+                                        <input type="number" class="form-control" id="api-timeout" value="30" min="5" max="120">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="rate-limit" class="form-label">Rate Limit (requests/minute)</label>
+                                        <input type="number" class="form-control" id="rate-limit" value="1200" min="100" max="5000">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-outline-primary" onclick="testApiConnection()">
+                                        <i class="fas fa-plug"></i> Test Connection
+                                    </button>
+                                    <span id="api-status" class="ms-3"></span>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save API Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notification Settings -->
+                <div class="tab-pane fade" id="notification-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Notification Settings</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="notification-form">
+                                <h6 class="mb-3">Email Notifications</h6>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="email-smtp-server" class="form-label">SMTP Server</label>
+                                        <input type="text" class="form-control" id="email-smtp-server" placeholder="smtp.gmail.com">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="email-smtp-port" class="form-label">Port</label>
+                                        <input type="number" class="form-control" id="email-smtp-port" value="587">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="email-encryption" class="form-label">Encryption</label>
+                                        <select class="form-select" id="email-encryption">
+                                            <option value="tls" selected>TLS</option>
+                                            <option value="ssl">SSL</option>
+                                            <option value="none">None</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="email-username" class="form-label">Email Username</label>
+                                        <input type="email" class="form-control" id="email-username" placeholder="your-email@gmail.com">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="email-password" class="form-label">Email Password</label>
+                                        <input type="password" class="form-control" id="email-password" placeholder="App Password">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="notification-email" class="form-label">Notification Email</label>
+                                    <input type="email" class="form-control" id="notification-email" placeholder="notifications@yourdomain.com">
+                                </div>
+
+                                <hr>
+
+                                <h6 class="mb-3">Telegram Notifications</h6>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="telegram-bot-token" class="form-label">Bot Token</label>
+                                        <input type="password" class="form-control" id="telegram-bot-token" placeholder="Bot Token">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="telegram-chat-id" class="form-label">Chat ID</label>
+                                        <input type="text" class="form-control" id="telegram-chat-id" placeholder="Chat ID">
+                                    </div>
+                                </div>
+
+                                <hr>
+
+                                <h6 class="mb-3">Notification Types</h6>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-trades" checked>
+                                            <label class="form-check-label" for="notify-trades">Trade Executions</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-profits" checked>
+                                            <label class="form-check-label" for="notify-profits">Profit/Loss Alerts</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-errors" checked>
+                                            <label class="form-check-label" for="notify-errors">System Errors</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-signals" checked>
+                                            <label class="form-check-label" for="notify-signals">Trading Signals</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-daily-summary" checked>
+                                            <label class="form-check-label" for="notify-daily-summary">Daily Summary</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-weekly-report">
+                                            <label class="form-check-label" for="notify-weekly-report">Weekly Reports</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-maintenance">
+                                            <label class="form-check-label" for="notify-maintenance">Maintenance Alerts</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="notify-model-updates">
+                                            <label class="form-check-label" for="notify-model-updates">Model Updates</label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save Notification Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Model Configuration -->
+                <div class="tab-pane fade" id="model-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Model Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="model-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="model-update-frequency" class="form-label">Model Update Frequency</label>
+                                        <select class="form-select" id="model-update-frequency">
+                                            <option value="hourly">Hourly</option>
+                                            <option value="daily" selected>Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="manual">Manual Only</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="model-ensemble-size" class="form-label">Ensemble Size</label>
+                                        <input type="number" class="form-control" id="model-ensemble-size" value="5" min="1" max="10">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label for="lookback-period" class="form-label">Lookback Period (days)</label>
+                                        <input type="number" class="form-control" id="lookback-period" value="30" min="7" max="365">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="prediction-horizon" class="form-label">Prediction Horizon (hours)</label>
+                                        <input type="number" class="form-control" id="prediction-horizon" value="24" min="1" max="168">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="feature-selection" class="form-label">Feature Selection Method</label>
+                                        <select class="form-select" id="feature-selection">
+                                            <option value="auto" selected>Automatic</option>
+                                            <option value="manual">Manual</option>
+                                            <option value="genetic">Genetic Algorithm</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="auto-feature-engineering" checked>
+                                    <label class="form-check-label" for="auto-feature-engineering">
+                                        Enable Automatic Feature Engineering
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="model-validation" checked>
+                                    <label class="form-check-label" for="model-validation">
+                                        Enable Walk-Forward Validation
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="hyperparameter-tuning">
+                                    <label class="form-check-label" for="hyperparameter-tuning">
+                                        Enable Automatic Hyperparameter Tuning
+                                    </label>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save Model Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Settings -->
+                <div class="tab-pane fade" id="system-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">System Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="system-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="log-level" class="form-label">Log Level</label>
+                                        <select class="form-select" id="log-level">
+                                            <option value="DEBUG">Debug</option>
+                                            <option value="INFO" selected>Info</option>
+                                            <option value="WARNING">Warning</option>
+                                            <option value="ERROR">Error</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="max-log-files" class="form-label">Max Log Files</label>
+                                        <input type="number" class="form-control" id="max-log-files" value="30" min="1" max="365">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="data-retention-days" class="form-label">Data Retention (days)</label>
+                                        <input type="number" class="form-control" id="data-retention-days" value="90" min="30" max="3650">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="memory-limit" class="form-label">Memory Limit (GB)</label>
+                                        <input type="number" class="form-control" id="memory-limit" value="8" min="2" max="64">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="cpu-cores" class="form-label">CPU Cores to Use</label>
+                                        <input type="number" class="form-control" id="cpu-cores" value="4" min="1" max="32">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="timezone" class="form-label">Timezone</label>
+                                        <select class="form-select" id="timezone">
+                                            <option value="UTC" selected>UTC</option>
+                                            <option value="America/New_York">EST/EDT</option>
+                                            <option value="America/Chicago">CST/CDT</option>
+                                            <option value="America/Los_Angeles">PST/PDT</option>
+                                            <option value="Europe/London">GMT/BST</option>
+                                            <option value="Asia/Tokyo">JST</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="enable-monitoring" checked>
+                                    <label class="form-check-label" for="enable-monitoring">
+                                        Enable System Monitoring
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="auto-restart" checked>
+                                    <label class="form-check-label" for="auto-restart">
+                                        Auto-restart on System Failure
+                                    </label>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save System Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Backup Settings -->
+                <div class="tab-pane fade" id="backup-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Backup & Recovery</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="backup-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="backup-frequency" class="form-label">Backup Frequency</label>
+                                        <select class="form-select" id="backup-frequency">
+                                            <option value="hourly">Hourly</option>
+                                            <option value="daily" selected>Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="manual">Manual Only</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="backup-retention" class="form-label">Backup Retention (days)</label>
+                                        <input type="number" class="form-control" id="backup-retention" value="30" min="1" max="365">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="backup-location" class="form-label">Backup Location</label>
+                                    <input type="text" class="form-control" id="backup-location" placeholder="/path/to/backup/directory">
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-12">
+                                        <label class="form-label">Backup Components</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="backup-database" checked>
+                                            <label class="form-check-label" for="backup-database">Database</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="backup-models" checked>
+                                            <label class="form-check-label" for="backup-models">Trained Models</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="backup-configs" checked>
+                                            <label class="form-check-label" for="backup-configs">Configuration Files</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="backup-logs">
+                                            <label class="form-check-label" for="backup-logs">Log Files</label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="btn-group" role="group">
+                                        <button type="button" class="btn btn-outline-primary" onclick="createBackup()">
+                                            <i class="fas fa-save"></i> Create Backup Now
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success" onclick="restoreBackup()">
+                                            <i class="fas fa-upload"></i> Restore from Backup
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info" onclick="listBackups()">
+                                            <i class="fas fa-list"></i> List Backups
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Save Backup Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Settings -->
+                <div class="tab-pane fade" id="user-settings">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">User Account</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="user-form">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="username" class="form-label">Username</label>
+                                        <input type="text" class="form-control" id="username" value="admin" readonly>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="email" class="form-label">Email</label>
+                                        <input type="email" class="form-control" id="email" placeholder="your-email@domain.com">
+                                    </div>
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="current-password" class="form-label">Current Password</label>
+                                        <input type="password" class="form-control" id="current-password" placeholder="Enter current password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="new-password" class="form-label">New Password</label>
+                                        <input type="password" class="form-control" id="new-password" placeholder="Enter new password">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="confirm-password" class="form-label">Confirm New Password</label>
+                                    <input type="password" class="form-control" id="confirm-password" placeholder="Confirm new password">
+                                </div>
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="theme" class="form-label">Theme</label>
+                                        <select class="form-select" id="theme">
+                                            <option value="light">Light</option>
+                                            <option value="dark" selected>Dark</option>
+                                            <option value="auto">Auto</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="language" class="form-label">Language</label>
+                                        <select class="form-select" id="language">
+                                            <option value="en" selected>English</option>
+                                            <option value="es">Spanish</option>
+                                            <option value="fr">French</option>
+                                            <option value="de">German</option>
+                                            <option value="ja">Japanese</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="two-factor-auth">
+                                    <label class="form-check-label" for="two-factor-auth">
+                                        Enable Two-Factor Authentication
+                                    </label>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">Update Account</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Settings Modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Import Settings</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="import-settings-form">
+                    <div class="mb-3">
+                        <label for="settings-file" class="form-label">Select Settings File</label>
+                        <input type="file" class="form-control" id="settings-file" accept=".json,.yaml,.yml">
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="overwrite-existing" checked>
+                        <label class="form-check-label" for="overwrite-existing">
+                            Overwrite existing settings
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmImport()">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAllSettings();
+    
+    // Form submit handlers
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveFormSettings(this.id);
+        });
+    });
+});
+
+function loadAllSettings() {
+    fetch('/api/settings')
+    .then(response => response.json())
+    .then(settings => {
+        populateSettings(settings);
+    })
+    .catch(error => {
+        console.error('Error loading settings:', error);
+        showToast('Error loading settings', 'error');
+    });
+}
+
+function populateSettings(settings) {
+    // Trading settings
+    if (settings.trading) {
+        document.getElementById('trading-mode').value = settings.trading.mode || 'paper';
+        document.getElementById('trading-frequency').value = settings.trading.frequency || '5m';
+        document.getElementById('base-currency').value = settings.trading.base_currency || 'USDT';
+        document.getElementById('max-positions').value = settings.trading.max_positions || 5;
+        document.getElementById('signal-threshold').value = settings.trading.signal_threshold || 0.6;
+        document.getElementById('min-trade-interval').value = settings.trading.min_trade_interval || 30;
+        document.getElementById('auto-trading').checked = settings.trading.auto_trading !== false;
+        document.getElementById('weekend-trading').checked = settings.trading.weekend_trading === true;
+        
+        // Set selected trading pairs
+        if (settings.trading.pairs) {
+            const pairsSelect = document.getElementById('trading-pairs-config');
+            Array.from(pairsSelect.options).forEach(option => {
+                option.selected = settings.trading.pairs.includes(option.value);
+            });
+        }
+    }
+    
+    // Risk settings
+    if (settings.risk) {
+        document.getElementById('position-size-pct').value = settings.risk.position_size_pct || 2.0;
+        document.getElementById('max-portfolio-risk').value = settings.risk.max_portfolio_risk || 20.0;
+        document.getElementById('max-daily-loss').value = settings.risk.max_daily_loss || 5.0;
+        document.getElementById('stop-loss-pct').value = settings.risk.stop_loss_pct || 2.0;
+        document.getElementById('take-profit-pct').value = settings.risk.take_profit_pct || 4.0;
+        document.getElementById('trailing-stop').value = settings.risk.trailing_stop || 1.0;
+        document.getElementById('correlation-limit').value = settings.risk.correlation_limit || 0.7;
+        document.getElementById('drawdown-limit').value = settings.risk.drawdown_limit || 15.0;
+        document.getElementById('emergency-stop').checked = settings.risk.emergency_stop !== false;
+        document.getElementById('risk-scaling').checked = settings.risk.risk_scaling !== false;
+    }
+    
+    // API settings
+    if (settings.api) {
+        document.getElementById('exchange-select').value = settings.api.exchange || 'binance';
+        document.getElementById('api-timeout').value = settings.api.timeout || 30;
+        document.getElementById('rate-limit').value = settings.api.rate_limit || 1200;
+        document.getElementById('api-sandbox').value = settings.api.sandbox ? 'true' : 'false';
+        // Les champs api-key et api-secret ne sont pas pré-remplis pour des raisons de sécurité.
+        // document.getElementById('api-key').value = settings.api.api_key || '';
+        // document.getElementById('api-secret').value = settings.api.api_secret || '';
+    }
+
+    // Notification settings
+    if (settings.notifications) {
+        document.getElementById('notification-email').value = settings.notifications.email_address || '';
+        // Pour les checkboxes, vérifier si la clé existe et est true.
+        // Les IDs doivent correspondre à ceux utilisés dans saveFormSettings.
+        document.getElementById('notify-daily-summary').checked = settings.notifications.email_enabled === true; // Ajusté pour correspondre à la sauvegarde
+        document.getElementById('telegram-bot-token').value = settings.notifications.telegram_token || '';
+        document.getElementById('telegram-chat-id').value = settings.notifications.telegram_chat_id || '';
+        document.getElementById('notify-trades').checked = settings.notifications.notify_trades === true;
+        document.getElementById('notify-errors').checked = settings.notifications.notify_errors === true;
+        document.getElementById('notify-profits').checked = settings.notifications.notify_alerts === true; // 'notify-profits' est l'ID pour les alertes P&L
+    }
+
+    // Model settings
+    if (settings.model) {
+        document.getElementById('model-update-frequency').value = settings.model.update_frequency || 'daily';
+        document.getElementById('model-ensemble-size').value = settings.model.ensemble_size || 5;
+        document.getElementById('lookback-period').value = settings.model.lookback_period || 30;
+        document.getElementById('prediction-horizon').value = settings.model.prediction_horizon || 24;
+    }
+
+    // System settings
+    if (settings.system) {
+        document.getElementById('log-level').value = settings.system.log_level || 'INFO';
+        document.getElementById('max-log-files').value = settings.system.max_log_files || 30;
+        document.getElementById('data-retention-days').value = settings.system.data_retention_days || 90;
+        document.getElementById('timezone').value = settings.system.timezone || 'UTC';
+    }
+    
+    // Les sections Backup et User ne sont pas chargées depuis /api/settings de la même manière.
+}
+
+function saveFormSettings(formId) {
+    const formData = new FormData(document.getElementById(formId));
+    const settings = {};
+    
+    // Convert FormData to settings object based on form type
+    switch(formId) {
+        case 'trading-form':
+            settings.trading = {
+                mode: document.getElementById('trading-mode').value,
+                frequency: document.getElementById('trading-frequency').value,
+                base_currency: document.getElementById('base-currency').value,
+                pairs: Array.from(document.getElementById('trading-pairs-config').selectedOptions).map(o => o.value),
+                max_positions: parseInt(document.getElementById('max-positions').value),
+                signal_threshold: parseFloat(document.getElementById('signal-threshold').value),
+                min_trade_interval: parseInt(document.getElementById('min-trade-interval').value),
+                auto_trading: document.getElementById('auto-trading').checked,
+                weekend_trading: document.getElementById('weekend-trading').checked
+            };
+            break;
+            
+        case 'risk-form':
+            settings.risk = {
+                position_size_pct: parseFloat(document.getElementById('position-size-pct').value),
+                max_portfolio_risk: parseFloat(document.getElementById('max-portfolio-risk').value),
+                max_daily_loss: parseFloat(document.getElementById('max-daily-loss').value),
+                stop_loss_pct: parseFloat(document.getElementById('stop-loss-pct').value),
+                take_profit_pct: parseFloat(document.getElementById('take-profit-pct').value),
+                trailing_stop: parseFloat(document.getElementById('trailing-stop').value),
+                correlation_limit: parseFloat(document.getElementById('correlation-limit').value),
+                drawdown_limit: parseFloat(document.getElementById('drawdown-limit').value),
+                emergency_stop: document.getElementById('emergency-stop').checked,
+                risk_scaling: document.getElementById('risk-scaling').checked
+            };
+            break;
+        case 'api-form':
+            settings.api = {
+                exchange: document.getElementById('exchange-select').value,
+                api_key: document.getElementById('api-key').value,
+                api_secret: document.getElementById('api-secret').value,
+                // passphrase: document.getElementById('api-passphrase').value, // Passphrase n'est pas dans DEFAULT_SETTINGS
+                timeout: parseInt(document.getElementById('api-timeout').value),
+                rate_limit: parseInt(document.getElementById('rate-limit').value),
+                sandbox: document.getElementById('api-sandbox').value === 'true'
+            };
+            break;
+        case 'notification-form':
+             settings.notifications = {
+                email_enabled: document.getElementById('notify-daily-summary').checked, // Exemple, ajuster aux ID réels
+                email_address: document.getElementById('notification-email').value,
+                // ... autres champs email ...
+                telegram_enabled: false, // Placeholder
+                telegram_token: document.getElementById('telegram-bot-token').value,
+                telegram_chat_id: document.getElementById('telegram-chat-id').value,
+                notify_trades: document.getElementById('notify-trades').checked,
+                notify_errors: document.getElementById('notify-errors').checked,
+                notify_alerts: document.getElementById('notify-profits').checked // 'notify-profits' semble être l'ID pour les alertes de P&L
+            };
+            break;
+        case 'model-form':
+            settings.model = {
+                update_frequency: document.getElementById('model-update-frequency').value,
+                ensemble_size: parseInt(document.getElementById('model-ensemble-size').value),
+                lookback_period: parseInt(document.getElementById('lookback-period').value),
+                prediction_horizon: parseInt(document.getElementById('prediction-horizon').value)
+                // feature_selection: document.getElementById('feature-selection').value, // Non dans DEFAULT_SETTINGS
+                // auto_feature_engineering: document.getElementById('auto-feature-engineering').checked, // Non dans DEFAULT_SETTINGS
+                // model_validation: document.getElementById('model-validation').checked, // Non dans DEFAULT_SETTINGS
+                // hyperparameter_tuning: document.getElementById('hyperparameter-tuning').checked // Non dans DEFAULT_SETTINGS
+            };
+            break;
+        case 'system-form':
+            settings.system = {
+                log_level: document.getElementById('log-level').value,
+                max_log_files: parseInt(document.getElementById('max-log-files').value),
+                data_retention_days: parseInt(document.getElementById('data-retention-days').value),
+                // memory_limit: parseInt(document.getElementById('memory-limit').value), // Non dans DEFAULT_SETTINGS
+                // cpu_cores: parseInt(document.getElementById('cpu-cores').value), // Non dans DEFAULT_SETTINGS
+                timezone: document.getElementById('timezone').value
+                // enable_monitoring: document.getElementById('enable-monitoring').checked, // Non dans DEFAULT_SETTINGS
+                // auto_restart: document.getElementById('auto-restart').checked // Non dans DEFAULT_SETTINGS
+            };
+            break;
+        // Le formulaire 'backup-form' et 'user-form' ne sauvegardent pas via /api/settings de la même manière.
+        // Ils ont leurs propres endpoints ou logiques.
+    }
+    
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Settings saved successfully', 'success');
+        } else {
+            showToast('Error saving settings: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving settings:', error);
+        showToast('Error saving settings', 'error');
+    });
+}
+
+function saveAllSettings() {
+    // Collect all settings from all forms
+    const allSettings = {};
+    
+    // Add logic to collect from all forms
+    document.querySelectorAll('form').forEach(form => {
+        saveFormSettings(form.id);
+    });
+    
+    showToast('All settings saved', 'success');
+}
+
+function resetToDefaults() {
+    if (confirm('Are you sure you want to reset all settings to defaults? This action cannot be undone.')) {
+        fetch('/api/settings/reset', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                showToast('Error resetting settings', 'error');
+            }
+        });
+    }
+}
+
+function exportSettings() {
+    fetch('/api/settings/export')
+    .then(response => response.blob())
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `alphabeta808_settings_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        showToast('Settings exported successfully', 'success');
+    });
+}
+
+function importSettings() {
+    const modal = new bootstrap.Modal(document.getElementById('importModal'));
+    modal.show();
+}
+
+function confirmImport() {
+    const fileInput = document.getElementById('settings-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showToast('Please select a settings file', 'warning');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('settings_file', file);
+    formData.append('overwrite', document.getElementById('overwrite-existing').checked);
+    
+    fetch('/api/settings/import', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+            showToast('Settings imported successfully', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('Error importing settings: ' + data.error, 'error');
+        }
+    });
+}
+
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    const button = input.nextElementSibling;
+    const icon = button.querySelector('i');
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
+function testApiConnection() {
+    const apiKey = document.getElementById('api-key').value;
+    const apiSecret = document.getElementById('api-secret').value;
+    const exchange = document.getElementById('exchange-select').value;
+    const sandbox = document.getElementById('api-sandbox').value === 'true';
+    
+    if (!apiKey || !apiSecret) {
+        showToast('Please enter API key and secret', 'warning');
+        return;
+    }
+    
+    const statusElement = document.getElementById('api-status');
+    statusElement.innerHTML = '<span class="text-info">Testing connection...</span>';
+    
+    fetch('/api/settings/test-api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            exchange: exchange,
+            api_key: apiKey,
+            api_secret: apiSecret,
+            sandbox: sandbox
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusElement.innerHTML = '<span class="text-success"><i class="fas fa-check"></i> Connection successful</span>';
+        } else {
+            statusElement.innerHTML = `<span class="text-danger"><i class="fas fa-times"></i> Connection failed: ${data.error}</span>`;
+        }
+    })
+    .catch(error => {
+        statusElement.innerHTML = '<span class="text-danger"><i class="fas fa-times"></i> Connection error</span>';
+    });
+}
+
+function createBackup() {
+    fetch('/api/settings/backup/create', { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Backup created successfully', 'success');
+        } else {
+            showToast('Error creating backup: ' + data.error, 'error');
+        }
+    });
+}
+
+function restoreBackup() {
+    showToast('Backup restoration feature coming soon', 'info');
+}
+
+function listBackups() {
+    showToast('Backup listing feature coming soon', 'info');
+}
+</script>
+{% endblock %}

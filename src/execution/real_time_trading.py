@@ -381,9 +381,11 @@ class BinanceRealTimeTrader:
             'symbol': order.symbol,
             'side': order.side.value,
             'type': order.order_type.value,
-            'quantity': f"{order.quantity:.6f}",
-            'timeInForce': order.time_in_force
+            'quantity': f"{order.quantity:.6f}"
         }
+
+        if order.order_type in [OrderType.LIMIT, OrderType.STOP_LOSS_LIMIT, OrderType.TAKE_PROFIT_LIMIT, OrderType.OCO]:
+            params['timeInForce'] = order.time_in_force
         
         if order.price is not None:
             params['price'] = f"{order.price:.8f}"
@@ -431,8 +433,17 @@ class BinanceRealTimeTrader:
         """Place un ordre de manière asynchrone"""
         try:
             # Valider l'ordre avec le risk manager
-            if not self.risk_manager.validate_order(order, self.account_balances):
-                self.logger.warning(f"Ordre rejeté par le risk manager: {order.symbol}")
+            portfolio_value = sum(balance.total * self.get_current_price(f"{balance.asset}USDT")
+                                for balance in self.account_balances.values()
+                                if balance.asset != 'USDT')
+            portfolio_value += self.account_balances.get('USDT', AccountBalance('USDT', 0, 0, 0)).total
+
+            is_valid, reason = self.risk_manager.check_order_validity(
+                order, self.account_balances, portfolio_value)
+            
+            if not is_valid:
+                self.logger.warning(f"Ordre rejeté par le risk manager: {reason} ({order.symbol})")
+                order.status = OrderStatus.REJECTED # Assigner un statut en cas de rejet
                 return False
             
             # Préparer les paramètres pour l'API Binance

@@ -1,0 +1,362 @@
+/* Enhanced Trading Interface Styles */
+
+:root {
+    --primary-color: #2563eb;
+    --primary-rgb: 37, 99, 235;
+    --secondary-color: #64748b;
+    --secondary-rgb: 100, 116, 139;
+    --success-color: #059669;
+    --success-rgb: 5, 150, 105;
+    --warning-color: #d97706;
+    --warning-rgb: 217, 119, 6;
+    --danger-color: #dc2626;
+    --danger-rgb: 220, 38, 38;
+    --info-color: #0284c7;
+    --info-rgb: 2, 132, 199;
+    --light-color: #f8fafc;
+    --light-rgb: 248, 250, 252;
+    --dark-color: #1e293b;
+    --dark-rgb: 30, 41, 59;
+    --border-color: #e2e8f0;
+}
+
+/* Trading View Enhancements */
+.tradingview-widget-container {
+    height: 100%;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Trading Controls */
+.trading-controls {
+    background: linear-gradient(135deg, var(--primary-color), var(--info-color));
+    color: white;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.trading-mode-toggle {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2rem;
+    padding: 0.5rem;
+    display: inline-flex;
+}
+
+.trading-mode-toggle button {
+    border: none;
+    background: transparent;
+    color: white;
+    padding: 0.5rem 1.5rem;
+    border-radius: 1.5rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.trading-mode-toggle button.active {
+    background: white;
+    color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Order Forms */
+.order-form {
+    background: white;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1.5rem;
+}
+
+.order-form.buy-form {
+    border-left: 4px solid var(--success-color);
+}
+
+.order-form.sell-form {
+    border-left: 4px solid var(--danger-color);
+}
+
+.buy-button {
+    background: var(--success-color);
+    border: none;
+    color: white;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.buy-button:hover {
+    background: #047857;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.sell-button {
+    background: var(--danger-color);
+    border: none;
+    color: white;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.sell-button:hover {
+    background: #b91c1c;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+
+/* Position Size Calculator */
+.position-calculator {
+    background: rgba(var(--info-rgb), 0.05);
+    border: 1px solid rgba(var(--info-rgb), 0.2);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+.calculator-result {
+    background: rgba(var(--success-rgb), 0.1);
+    border: 1px solid var(--success-color);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    font-weight: 600;
+    color: var(--success-color);
+}
+
+/* Portfolio Cards */
+.portfolio-card {
+    background: white;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    margin-bottom: 1.5rem;
+}
+
+.portfolio-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.balance-item {
+    padding: 1rem;
+    border-left: 4px solid var(--primary-color);
+    background: rgba(var(--primary-rgb), 0.05);
+    border-radius: 0 0.5rem 0.5rem 0;
+    margin-bottom: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.balance-item:hover {
+    background: rgba(var(--primary-rgb), 0.1);
+    transform: translateX(4px);
+}
+
+/* Alert Cards */
+.alert-card {
+    background: white;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--primary-color);
+}
+
+.alert-card.triggered {
+    border-left-color: var(--success-color);
+    background: rgba(var(--success-rgb), 0.02);
+}
+
+.alert-card.inactive {
+    border-left-color: var(--secondary-color);
+    background: rgba(var(--secondary-rgb), 0.02);
+    opacity: 0.8;
+}
+
+/* Risk Management */
+.risk-metric {
+    text-align: center;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+}
+
+.risk-metric:hover {
+    transform: scale(1.02);
+}
+
+.risk-low {
+    background: rgba(var(--success-rgb), 0.1);
+    border: 1px solid var(--success-color);
+}
+
+.risk-medium {
+    background: rgba(var(--warning-rgb), 0.1);
+    border: 1px solid var(--warning-color);
+}
+
+.risk-high {
+    background: rgba(var(--danger-rgb), 0.1);
+    border: 1px solid var(--danger-color);
+}
+
+/* Real-time Data */
+.price-ticker {
+    font-family: 'Roboto Mono', monospace;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    background: rgba(var(--info-rgb), 0.1);
+    color: var(--info-color);
+}
+
+.price-positive {
+    color: var(--success-color);
+    background: rgba(var(--success-rgb), 0.1);
+}
+
+.price-negative {
+    color: var(--danger-color);
+    background: rgba(var(--danger-rgb), 0.1);
+}
+
+/* Animations */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.loading-pulse {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .trading-controls {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .order-form {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .portfolio-card {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .risk-metric {
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --light-color: #1e293b;
+        --dark-color: #f8fafc;
+        --border-color: #374151;
+    }
+    
+    .portfolio-card,
+    .order-form,
+    .alert-card {
+        background: #1f2937;
+        color: #f9fafb;
+    }
+    
+    .balance-item {
+        background: rgba(var(--primary-rgb), 0.2);
+    }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--light-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--secondary-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-color);
+}
+
+/* Loading States */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Toast Notifications */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+.toast {
+    min-width: 300px;
+    margin-bottom: 10px;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.toast.success {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.toast.error {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.toast.warning {
+    background-color: var(--warning-color);
+    color: white;
+}
+
+.toast.info {
+    background-color: var(--info-color);
+    color: white;
+}

@@ -1,0 +1,616 @@
+{% extends "base.html" %}
+
+{% block title %}Alertes Prix - AlphaBeta808 Trading{% endblock %}
+{% block page_title %}Gestion des Alertes Prix{% endblock %}
+
+{% block extra_css %}
+<style>
+    .alert-card {
+        background: white;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        margin-bottom: 1rem;
+        border-left: 4px solid var(--primary-color);
+    }
+    
+    .alert-card.triggered {
+        border-left-color: var(--success-color);
+        background: rgba(var(--success-rgb), 0.02);
+    }
+    
+    .alert-card.inactive {
+        border-left-color: var(--secondary-color);
+        background: rgba(var(--secondary-rgb), 0.02);
+    }
+    
+    .alert-item {
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        margin-bottom: 1rem;
+        transition: all 0.2s ease;
+    }
+    
+    .alert-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .alert-active {
+        border-left: 4px solid var(--warning-color);
+    }
+    
+    .alert-triggered {
+        border-left: 4px solid var(--success-color);
+    }
+    
+    .alert-inactive {
+        border-left: 4px solid var(--secondary-color);
+        opacity: 0.7;
+    }
+    
+    .price-badge {
+        font-family: monospace;
+        font-weight: bold;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        background: rgba(var(--primary-rgb), 0.1);
+        color: var(--primary-color);
+    }
+    
+    .condition-above {
+        color: var(--success-color);
+    }
+    
+    .condition-below {
+        color: var(--danger-color);
+    }
+    
+    .stats-card {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        color: white;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="stats-card">
+            <div class="row text-center">
+                <div class="col-md-3">
+                    <h3 class="mb-1" id="totalAlerts">0</h3>
+                    <p class="mb-0 opacity-75">Total Alertes</p>
+                </div>
+                <div class="col-md-3">
+                    <h3 class="mb-1" id="activeAlerts">0</h3>
+                    <p class="mb-0 opacity-75">Actives</p>
+                </div>
+                <div class="col-md-3">
+                    <h3 class="mb-1" id="triggeredToday">0</h3>
+                    <p class="mb-0 opacity-75">Déclenchées Aujourd'hui</p>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-light btn-lg" onclick="showCreateAlertModal()">
+                        <i class="fas fa-plus me-2"></i>
+                        Nouvelle Alerte
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Active Alerts -->
+    <div class="col-md-8 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-bell me-2"></i>
+                    Alertes Actives
+                </h5>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-sm btn-outline-primary" onclick="filterAlerts('all')">Toutes</button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="filterAlerts('active')">Actives</button>
+                    <button class="btn btn-sm btn-outline-success" onclick="filterAlerts('triggered')">Déclenchées</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="filterAlerts('inactive')">Inactives</button>
+                </div>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                <div id="alertsList">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-2"></i><br>
+                        Chargement des alertes...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions & Settings -->
+    <div class="col-md-4 mb-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">Actions Rapides</h6>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-primary w-100 mb-2" onclick="showCreateAlertModal()">
+                    <i class="fas fa-plus me-2"></i>
+                    Créer une Alerte
+                </button>
+                <button class="btn btn-outline-warning w-100 mb-2" onclick="toggleAllAlerts()">
+                    <i class="fas fa-power-off me-2"></i>
+                    Activer/Désactiver Tout
+                </button>
+                <button class="btn btn-outline-danger w-100" onclick="deleteTriggeredAlerts()">
+                    <i class="fas fa-trash me-2"></i>
+                    Supprimer Déclenchées
+                </button>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Symboles Surveillés</h6>
+            </div>
+            <div class="card-body">
+                <div id="watchedSymbols">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+                        Chargement...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Alert Modal -->
+<div class="modal fade" id="createAlertModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Créer une Nouvelle Alerte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createAlertForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="alertSymbol" class="form-label">Symbole</label>
+                            <select class="form-select" id="alertSymbol" required>
+                                <option value="">Sélectionner un symbole</option>
+                                <option value="BTCUSDT">BTC/USDT</option>
+                                <option value="ETHUSDT">ETH/USDT</option>
+                                <option value="ADAUSDT">ADA/USDT</option>
+                                <option value="DOTUSDT">DOT/USDT</option>
+                                <option value="SOLUSDT">SOL/USDT</option>
+                                <option value="BNBUSDT">BNB/USDT</option>
+                                <option value="XRPUSDT">XRP/USDT</option>
+                                <option value="MATICUSDT">MATIC/USDT</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="alertCondition" class="form-label">Condition</label>
+                            <select class="form-select" id="alertCondition" required>
+                                <option value="above">Prix au-dessus de</option>
+                                <option value="below">Prix en-dessous de</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="targetPrice" class="form-label">Prix Cible</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control" id="targetPrice" step="0.00001" required>
+                            </div>
+                            <div class="form-text">Prix actuel: <span id="currentPrice">--</span></div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="alertMessage" class="form-label">Message personnalisé</label>
+                            <input type="text" class="form-control" id="alertMessage" placeholder="Message optionnel">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="notifyEmail">
+                            <label class="form-check-label" for="notifyEmail">
+                                Notification par email
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="notifyPush" checked>
+                            <label class="form-check-label" for="notifyPush">
+                                Notification push
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="createAlert()">
+                    <i class="fas fa-bell me-1"></i>
+                    Créer l'Alerte
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Alert Modal -->
+<div class="modal fade" id="editAlertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Modifier l'Alerte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editAlertForm">
+                    <input type="hidden" id="editAlertId">
+                    <div class="mb-3">
+                        <label for="editTargetPrice" class="form-label">Prix Cible</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="editTargetPrice" step="0.00001" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editAlertMessage" class="form-label">Message</label>
+                        <input type="text" class="form-control" id="editAlertMessage">
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editIsActive">
+                            <label class="form-check-label" for="editIsActive">
+                                Alerte active
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="updateAlert()">Sauvegarder</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentFilter = 'all';
+    let allAlerts = [];
+    
+    // Initialize alerts page
+    document.addEventListener('DOMContentLoaded', function() {
+        loadAlerts();
+        loadWatchedSymbols();
+        
+        // Setup symbol change handler for current price
+        document.getElementById('alertSymbol').addEventListener('change', function() {
+            loadCurrentPrice(this.value);
+        });
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadAlerts, 30000);
+    });
+    
+    // Load all alerts
+    async function loadAlerts() {
+        try {
+            const response = await apiCall('/api/alerts');
+            if (response.success) {
+                allAlerts = response.data;
+                updateAlertsStats();
+                displayAlerts(filterAlertsByType(currentFilter));
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des alertes:', error);
+            document.getElementById('alertsList').innerHTML = `
+                <div class="text-center text-danger py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                    Erreur lors du chargement des alertes
+                </div>
+            `;
+        }
+    }
+    
+    // Update alerts statistics
+    function updateAlertsStats() {
+        const total = allAlerts.length;
+        const active = allAlerts.filter(alert => alert.is_active && !alert.triggered_at).length;
+        const triggeredToday = allAlerts.filter(alert => {
+            if (!alert.triggered_at) return false;
+            const today = new Date().toDateString();
+            return new Date(alert.triggered_at).toDateString() === today;
+        }).length;
+        
+        document.getElementById('totalAlerts').textContent = total;
+        document.getElementById('activeAlerts').textContent = active;
+        document.getElementById('triggeredToday').textContent = triggeredToday;
+    }
+    
+    // Filter alerts by type
+    function filterAlertsByType(type) {
+        switch (type) {
+            case 'active':
+                return allAlerts.filter(alert => alert.is_active && !alert.triggered_at);
+            case 'triggered':
+                return allAlerts.filter(alert => alert.triggered_at);
+            case 'inactive':
+                return allAlerts.filter(alert => !alert.is_active);
+            default:
+                return allAlerts;
+        }
+    }
+    
+    // Display alerts
+    function displayAlerts(alerts) {
+        const alertsList = document.getElementById('alertsList');
+        
+        if (alerts.length === 0) {
+            alertsList.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-bell-slash fa-2x mb-2"></i><br>
+                    Aucune alerte trouvée
+                </div>
+            `;
+            return;
+        }
+        
+        alertsList.innerHTML = alerts.map(alert => {
+            const statusClass = alert.triggered_at ? 'alert-triggered' : 
+                               alert.is_active ? 'alert-active' : 'alert-inactive';
+            
+            const conditionIcon = alert.condition === 'above' ? 'fa-arrow-up' : 'fa-arrow-down';
+            const conditionClass = alert.condition === 'above' ? 'condition-above' : 'condition-below';
+            
+            const statusBadge = alert.triggered_at ? 
+                '<span class="badge bg-success">Déclenchée</span>' :
+                alert.is_active ? 
+                '<span class="badge bg-warning">Active</span>' :
+                '<span class="badge bg-secondary">Inactive</span>';
+            
+            return `
+                <div class="alert-item ${statusClass}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center mb-2">
+                                <h6 class="mb-0 me-2">${alert.symbol}</h6>
+                                ${statusBadge}
+                            </div>
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas ${conditionIcon} ${conditionClass} me-2"></i>
+                                <span class="price-badge">${formatCurrency(alert.target_price)}</span>
+                            </div>
+                            ${alert.message ? `<p class="text-muted mb-1 small">${alert.message}</p>` : ''}
+                            <small class="text-muted">
+                                Créée: ${new Date(alert.created_at).toLocaleString('fr-FR')}
+                                ${alert.triggered_at ? `• Déclenchée: ${new Date(alert.triggered_at).toLocaleString('fr-FR')}` : ''}
+                            </small>
+                        </div>
+                        <div class="ms-3">
+                            <div class="btn-group-vertical" role="group">
+                                <button class="btn btn-sm btn-outline-primary" onclick="editAlert(${alert.id})">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-${alert.is_active ? 'warning' : 'success'}" 
+                                        onclick="toggleAlert(${alert.id})">
+                                    <i class="fas fa-power-off"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteAlert(${alert.id})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Filter alerts
+    function filterAlerts(type) {
+        currentFilter = type;
+        displayAlerts(filterAlertsByType(type));
+        
+        // Update active filter button
+        document.querySelectorAll('.btn-group button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+    }
+    
+    // Show create alert modal
+    function showCreateAlertModal() {
+        document.getElementById('createAlertForm').reset();
+        document.getElementById('currentPrice').textContent = '--';
+        const modal = new bootstrap.Modal(document.getElementById('createAlertModal'));
+        modal.show();
+    }
+    
+    // Load current price for selected symbol
+    async function loadCurrentPrice(symbol) {
+        if (!symbol) return;
+        
+        try {
+            // Utiliser l'endpoint /api/market/ticker/<symbol> qui retourne un objet plus complet
+            const response = await apiCall(`/api/market/ticker/${symbol}`);
+            // La réponse de /api/market/ticker/<symbol> est directement l'objet de données du ticker, pas encapsulé dans {success, data}
+            // et contient une clé 'price' pour le dernier prix.
+            if (response && response.price !== undefined) {
+                document.getElementById('currentPrice').textContent = formatCurrency(response.price);
+            } else {
+                console.error('Prix non trouvé dans la réponse de /api/market/ticker/', response);
+                document.getElementById('currentPrice').textContent = 'Erreur';
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement du prix:', error);
+        }
+    }
+    
+    // Create new alert
+    async function createAlert() {
+        const form = document.getElementById('createAlertForm');
+        const formData = new FormData(form);
+        
+        const alertData = {
+            symbol: document.getElementById('alertSymbol').value,
+            target_price: parseFloat(document.getElementById('targetPrice').value),
+            condition: document.getElementById('alertCondition').value,
+            message: document.getElementById('alertMessage').value,
+            notify_email: document.getElementById('notifyEmail').checked,
+            notify_push: document.getElementById('notifyPush').checked
+        };
+        
+        try {
+            const response = await apiCall('/api/alerts', 'POST', alertData);
+            if (response.success) {
+                showToast('Alerte créée avec succès', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('createAlertModal')).hide();
+                loadAlerts();
+            }
+        } catch (error) {
+            console.error('Erreur lors de la création de l\'alerte:', error);
+            showToast('Erreur lors de la création de l\'alerte', 'error');
+        }
+    }
+    
+    // Edit alert
+    function editAlert(alertId) {
+        const alert = allAlerts.find(a => a.id === alertId);
+        if (!alert) return;
+        
+        document.getElementById('editAlertId').value = alertId;
+        document.getElementById('editTargetPrice').value = alert.target_price;
+        document.getElementById('editAlertMessage').value = alert.message || '';
+        document.getElementById('editIsActive').checked = alert.is_active;
+        
+        const modal = new bootstrap.Modal(document.getElementById('editAlertModal'));
+        modal.show();
+    }
+    
+    // Update alert
+    async function updateAlert() {
+        const alertId = document.getElementById('editAlertId').value;
+        const updateData = {
+            target_price: parseFloat(document.getElementById('editTargetPrice').value),
+            message: document.getElementById('editAlertMessage').value,
+            is_active: document.getElementById('editIsActive').checked
+        };
+        
+        try {
+            const response = await apiCall(`/api/alerts/${alertId}`, 'PUT', updateData);
+            if (response.success) {
+                showToast('Alerte mise à jour avec succès', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('editAlertModal')).hide();
+                loadAlerts();
+            }
+        } catch (error) {
+            console.error('Erreur lors de la mise à jour de l\'alerte:', error);
+            showToast('Erreur lors de la mise à jour', 'error');
+        }
+    }
+    
+    // Toggle alert active state
+    async function toggleAlert(alertId) {
+        try {
+            const response = await apiCall(`/api/alerts/${alertId}/toggle`, 'POST');
+            if (response.success) {
+                showToast('État de l\'alerte modifié', 'success');
+                loadAlerts();
+            }
+        } catch (error) {
+            console.error('Erreur lors du changement d\'état:', error);
+            showToast('Erreur lors du changement d\'état', 'error');
+        }
+    }
+    
+    // Delete alert
+    async function deleteAlert(alertId) {
+        if (!confirm('Êtes-vous sûr de vouloir supprimer cette alerte ?')) return;
+        
+        try {
+            const response = await apiCall(`/api/alerts/${alertId}`, 'DELETE');
+            if (response.success) {
+                showToast('Alerte supprimée avec succès', 'success');
+                loadAlerts();
+            }
+        } catch (error) {
+            console.error('Erreur lors de la suppression:', error);
+            showToast('Erreur lors de la suppression', 'error');
+        }
+    }
+    
+    // Load watched symbols
+    async function loadWatchedSymbols() {
+        const symbols = [...new Set(allAlerts.map(alert => alert.symbol))];
+        const watchedSymbols = document.getElementById('watchedSymbols');
+        
+        if (symbols.length === 0) {
+            watchedSymbols.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+                    Aucun symbole surveillé
+                </div>
+            `;
+            return;
+        }
+        
+        watchedSymbols.innerHTML = symbols.map(symbol => {
+            const symbolAlerts = allAlerts.filter(alert => alert.symbol === symbol);
+            const activeCount = symbolAlerts.filter(alert => alert.is_active).length;
+            
+            return `
+                <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+                    <span class="fw-bold">${symbol}</span>
+                    <span class="badge bg-primary">${activeCount}</span>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Utility functions
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 8
+        }).format(amount);
+    }
+    
+    async function apiCall(endpoint, method = 'GET', data = null) {
+        const options = {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        };
+        
+        if (data) {
+            options.body = JSON.stringify(data);
+        }
+        
+        const response = await fetch(endpoint, options);
+        return await response.json();
+    }
+    
+    function showToast(message, type) {
+        // Implementation would depend on your toast notification system
+        console.log(`${type.toUpperCase()}: ${message}`);
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,839 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - AlphaBeta808{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 text-gradient">Trading Reports</h1>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-primary" onclick="generateReport()">
+                        <i class="fas fa-chart-bar"></i> Generate Report
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" onclick="exportReport()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="scheduleReport()">
+                        <i class="fas fa-clock"></i> Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Filters -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Report Filters</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label for="date-range" class="form-label">Date Range</label>
+                            <select class="form-select" id="date-range" onchange="updateDateRange()">
+                                <option value="7d">Last 7 Days</option>
+                                <option value="30d" selected>Last 30 Days</option>
+                                <option value="90d">Last 90 Days</option>
+                                <option value="1y">Last Year</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="start-date" class="form-label">Start Date</label>
+                            <input type="date" class="form-control" id="start-date">
+                        </div>
+                        <div class="col-md-2">
+                            <label for="end-date" class="form-label">End Date</label>
+                            <input type="date" class="form-control" id="end-date">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="trading-pairs" class="form-label">Trading Pairs</label>
+                            <select class="form-select" id="trading-pairs" multiple>
+                                <option value="all" selected>All Pairs</option>
+                                <option value="BTCUSDT">BTCUSDT</option>
+                                <option value="ETHUSDT">ETHUSDT</option>
+                                <option value="ADAUSDT">ADAUSDT</option>
+                                <option value="DOTUSDT">DOTUSDT</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="report-type" class="form-label">Report Type</label>
+                            <select class="form-select" id="report-type">
+                                <option value="performance">Performance</option>
+                                <option value="risk">Risk Analysis</option>
+                                <option value="trades">Trade Analysis</option>
+                                <option value="comprehensive">Comprehensive</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Summary -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6 text-success" id="total-pnl">+$0.00</div>
+                    <p class="card-text text-muted">Total P&L</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6 text-primary" id="total-trades">0</div>
+                    <p class="card-text text-muted">Total Trades</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6 text-info" id="win-rate">0%</div>
+                    <p class="card-text text-muted">Win Rate</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <div class="display-6 text-warning" id="sharpe-ratio">0.00</div>
+                    <p class="card-text text-muted">Sharpe Ratio</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Portfolio Performance</h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="chart-period" id="chart-1d" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="chart-1d">1D</label>
+                        
+                        <input type="radio" class="btn-check" name="chart-period" id="chart-7d" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary" for="chart-7d">7D</label>
+                        
+                        <input type="radio" class="btn-check" name="chart-period" id="chart-30d" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="chart-30d">30D</label>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <canvas id="portfolio-chart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Pair Performance</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="pair-performance-chart" width="200" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Risk Metrics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td>Maximum Drawdown</td>
+                                    <td id="max-drawdown" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Volatility (Annual)</td>
+                                    <td id="volatility" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Value at Risk (95%)</td>
+                                    <td id="var-95" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Conditional VaR</td>
+                                    <td id="cvar" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Beta (vs BTC)</td>
+                                    <td id="beta" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Alpha (Annual)</td>
+                                    <td id="alpha" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Calmar Ratio</td>
+                                    <td id="calmar-ratio" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Sortino Ratio</td>
+                                    <td id="sortino-ratio" class="text-end">--</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Trading Metrics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td>Profit Factor</td>
+                                    <td id="profit-factor" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Average Win</td>
+                                    <td id="avg-win" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Average Loss</td>
+                                    <td id="avg-loss" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Largest Win</td>
+                                    <td id="largest-win" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Largest Loss</td>
+                                    <td id="largest-loss" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Average Hold Time</td>
+                                    <td id="avg-hold-time" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Win Streak</td>
+                                    <td id="win-streak" class="text-end">--</td>
+                                </tr>
+                                <tr>
+                                    <td>Loss Streak</td>
+                                    <td id="loss-streak" class="text-end">--</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drawdown Chart -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Drawdown Analysis</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="drawdown-chart" width="400" height="150"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trade Distribution -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">P&L Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="pnl-distribution-chart" width="300" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Trade Duration Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="duration-distribution-chart" width="300" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Trades Table -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Detailed Trade History</h5>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-primary" onclick="exportTrades()">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover" id="trades-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Pair</th>
+                                    <th>Side</th>
+                                    <th>Entry Price</th>
+                                    <th>Exit Price</th>
+                                    <th>Quantity</th>
+                                    <th>P&L</th>
+                                    <th>P&L %</th>
+                                    <th>Duration</th>
+                                    <th>Fees</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trades-tbody">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <nav aria-label="Trades pagination">
+                        <ul class="pagination pagination-sm justify-content-center" id="trades-pagination">
+                            <!-- Pagination will be generated by JavaScript -->
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Generation Status -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Report Generation History</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Generated</th>
+                                    <th>Type</th>
+                                    <th>Period</th>
+                                    <th>Pairs</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-history-tbody">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Report Export Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="export-form">
+                    <div class="mb-3">
+                        <label for="export-format" class="form-label">Export Format</label>
+                        <select class="form-select" id="export-format">
+                            <option value="pdf">PDF Report</option>
+                            <option value="csv">CSV Data</option>
+                            <option value="excel">Excel Workbook</option>
+                            <option value="json">JSON Data</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="export-sections" class="form-label">Include Sections</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="include-summary" checked>
+                            <label class="form-check-label" for="include-summary">Performance Summary</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="include-charts" checked>
+                            <label class="form-check-label" for="include-charts">Charts and Graphs</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="include-trades" checked>
+                            <label class="form-check-label" for="include-trades">Trade Details</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="include-risk" checked>
+                            <label class="form-check-label" for="include-risk">Risk Analysis</label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmExport()">Export</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let portfolioChart, pairChart, drawdownChart, pnlChart, durationChart;
+let currentPage = 1;
+const tradesPerPage = 20;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initCharts();
+    loadReportData();
+    setDefaultDateRange();
+    
+    // Event listeners for filters
+    document.getElementById('date-range').addEventListener('change', updateDateRange);
+    document.getElementById('trading-pairs').addEventListener('change', loadReportData);
+    document.getElementById('report-type').addEventListener('change', loadReportData);
+    
+    // Chart period buttons
+    document.querySelectorAll('input[name="chart-period"]').forEach(radio => {
+        radio.addEventListener('change', updateChartPeriod);
+    });
+});
+
+function initCharts() {
+    // Portfolio Performance Chart
+    const portfolioCtx = document.getElementById('portfolio-chart').getContext('2d');
+    portfolioChart = new Chart(portfolioCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Portfolio Value',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Pair Performance Chart (Pie)
+    const pairCtx = document.getElementById('pair-performance-chart').getContext('2d');
+    pairChart = new Chart(pairCtx, {
+        type: 'pie',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+
+    // Drawdown Chart
+    const drawdownCtx = document.getElementById('drawdown-chart').getContext('2d');
+    drawdownChart = new Chart(drawdownCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Drawdown %',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    max: 0,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // P&L Distribution Chart
+    const pnlCtx = document.getElementById('pnl-distribution-chart').getContext('2d');
+    pnlChart = new Chart(pnlCtx, {
+        type: 'histogram',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Trade Count',
+                data: [],
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+
+    // Duration Distribution Chart
+    const durationCtx = document.getElementById('duration-distribution-chart').getContext('2d');
+    durationChart = new Chart(durationCtx, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Trade Count',
+                data: [],
+                backgroundColor: 'rgba(255, 206, 86, 0.5)',
+                borderColor: 'rgba(255, 206, 86, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+
+function setDefaultDateRange() {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - 30);
+    
+    document.getElementById('start-date').value = startDate.toISOString().split('T')[0];
+    document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+}
+
+function updateDateRange() {
+    const range = document.getElementById('date-range').value;
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    switch(range) {
+        case '7d':
+            startDate.setDate(endDate.getDate() - 7);
+            break;
+        case '30d':
+            startDate.setDate(endDate.getDate() - 30);
+            break;
+        case '90d':
+            startDate.setDate(endDate.getDate() - 90);
+            break;
+        case '1y':
+            startDate.setFullYear(endDate.getFullYear() - 1);
+            break;
+        case 'custom':
+            return; // Don't update dates for custom range
+    }
+    
+    document.getElementById('start-date').value = startDate.toISOString().split('T')[0];
+    document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+    
+    if (range !== 'custom') {
+        loadReportData();
+    }
+}
+
+function loadReportData() {
+    const filters = {
+        start_date: document.getElementById('start-date').value,
+        end_date: document.getElementById('end-date').value,
+        pairs: Array.from(document.getElementById('trading-pairs').selectedOptions).map(o => o.value),
+        report_type: document.getElementById('report-type').value
+    };
+    
+    fetch('/api/reports/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filters)
+    })
+    .then(response => response.json())
+    .then(data => {
+        updateSummaryCards(data.summary);
+        updateCharts(data.charts);
+        updateMetrics(data.metrics);
+        updateTradesTable(data.trades);
+    })
+    .catch(error => {
+        console.error('Error loading report data:', error);
+        showToast('Error loading report data', 'error');
+    });
+}
+
+function updateSummaryCards(summary) {
+    document.getElementById('total-pnl').textContent = formatCurrency(summary.total_pnl);
+    document.getElementById('total-pnl').className = `display-6 ${summary.total_pnl >= 0 ? 'text-success' : 'text-danger'}`;
+    
+    document.getElementById('total-trades').textContent = summary.total_trades;
+    document.getElementById('win-rate').textContent = summary.win_rate + '%';
+    document.getElementById('sharpe-ratio').textContent = summary.sharpe_ratio.toFixed(2);
+}
+
+function updateCharts(charts) {
+    // Update portfolio chart
+    portfolioChart.data.labels = charts.portfolio.labels;
+    portfolioChart.data.datasets[0].data = charts.portfolio.data;
+    portfolioChart.update();
+    
+    // Update pair performance chart
+    pairChart.data.labels = charts.pairs.labels;
+    pairChart.data.datasets[0].data = charts.pairs.data;
+    pairChart.update();
+    
+    // Update drawdown chart
+    drawdownChart.data.labels = charts.drawdown.labels;
+    drawdownChart.data.datasets[0].data = charts.drawdown.data;
+    drawdownChart.update();
+}
+
+function updateMetrics(metrics) {
+    // Risk metrics
+    document.getElementById('max-drawdown').textContent = metrics.max_drawdown + '%';
+    document.getElementById('volatility').textContent = metrics.volatility + '%';
+    document.getElementById('var-95').textContent = formatCurrency(metrics.var_95);
+    document.getElementById('cvar').textContent = formatCurrency(metrics.cvar);
+    document.getElementById('beta').textContent = metrics.beta.toFixed(2);
+    document.getElementById('alpha').textContent = metrics.alpha + '%';
+    document.getElementById('calmar-ratio').textContent = metrics.calmar_ratio.toFixed(2);
+    document.getElementById('sortino-ratio').textContent = metrics.sortino_ratio.toFixed(2);
+    
+    // Trading metrics
+    document.getElementById('profit-factor').textContent = metrics.profit_factor.toFixed(2);
+    document.getElementById('avg-win').textContent = formatCurrency(metrics.avg_win);
+    document.getElementById('avg-loss').textContent = formatCurrency(metrics.avg_loss);
+    document.getElementById('largest-win').textContent = formatCurrency(metrics.largest_win);
+    document.getElementById('largest-loss').textContent = formatCurrency(metrics.largest_loss);
+    document.getElementById('avg-hold-time').textContent = metrics.avg_hold_time;
+    document.getElementById('win-streak').textContent = metrics.win_streak;
+    document.getElementById('loss-streak').textContent = metrics.loss_streak;
+}
+
+function updateTradesTable(trades) {
+    const tbody = document.getElementById('trades-tbody');
+    tbody.innerHTML = ''; // Vider le contenu précédent
+
+    if (!trades || trades.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-3">Aucun trade à afficher pour les filtres sélectionnés.</td></tr>';
+        updatePagination(0); // Mettre à jour la pagination pour afficher 0 pages
+        return;
+    }
+    
+    const startIndex = (currentPage - 1) * tradesPerPage;
+    const endIndex = startIndex + tradesPerPage;
+    const pageTrades = trades.slice(startIndex, endIndex); // 'pageTrades' au lieu de 'pageTradesTrades'
+    
+    pageTrades.forEach(trade => {
+        const row = document.createElement('tr');
+        // Les données de l'API pour les trades sont directement les champs de la table 'trades'
+        // ex: trade.timestamp, trade.symbol, trade.side, trade.price (pour entry), trade.quantity, trade.pnl
+        // 'exit_price', 'pnl_percent', 'duration', 'fees' ne sont pas directement dans la table 'trades'
+        // et devront être calculés ou omis si non disponibles.
+        // L'API /api/reports/data formate déjà ces trades pour l'affichage.
+        
+        const pnlValue = parseFloat(trade.pnl || 0);
+        const pnlClass = pnlValue >= 0 ? 'text-success' : 'text-danger';
+        const sideFormatted = trade.side ? trade.side.toUpperCase() : 'N/A';
+        const sideClass = sideFormatted === 'BUY' ? 'success' : (sideFormatted === 'SELL' ? 'danger' : 'secondary');
+
+        row.innerHTML = `
+            <td>${new Date(trade.date || trade.timestamp).toLocaleDateString('fr-CA')}</td> <!-- Utiliser 'fr-CA' pour YYYY-MM-DD -->
+            <td>${trade.pair || trade.symbol}</td>
+            <td><span class="badge bg-${sideClass}">${sideFormatted}</span></td>
+            <td>${formatCurrency(trade.entry_price || 0)}</td>
+            <td>${formatCurrency(trade.exit_price || 0)}</td> <!-- Peut ne pas être disponible pour les positions ouvertes -->
+            <td>${formatNumber(trade.quantity || 0, 6)}</td>
+            <td class="${pnlClass}">${formatCurrency(pnlValue)}</td>
+            <td class="${pnlClass}">${(trade.pnl_percent || 0).toFixed(2)}%</td>
+            <td>${trade.duration || 'N/A'}</td>
+            <td>${formatCurrency(trade.fees || 0)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+    
+    updatePagination(trades.length);
+}
+
+function updatePagination(totalTrades) {
+    const totalPages = Math.ceil(totalTrades / tradesPerPage);
+    const pagination = document.getElementById('trades-pagination');
+    pagination.innerHTML = '';
+    
+    // Previous button
+    const prevLi = document.createElement('li');
+    prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+    prevLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${currentPage - 1})">Previous</a>`;
+    pagination.appendChild(prevLi);
+    
+    // Page numbers
+    for (let i = 1; i <= totalPages; i++) {
+        const li = document.createElement('li');
+        li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+        li.innerHTML = `<a class="page-link" href="#" onclick="changePage(${i})">${i}</a>`;
+        pagination.appendChild(li);
+    }
+    
+    // Next button
+    const nextLi = document.createElement('li');
+    nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+    nextLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${currentPage + 1})">Next</a>`;
+    pagination.appendChild(nextLi);
+}
+
+function changePage(page) {
+    const totalPages = Math.ceil(document.getElementById('trades-tbody').children.length / tradesPerPage);
+    if (page >= 1 && page <= totalPages) {
+        currentPage = page;
+        loadReportData();
+    }
+}
+
+function generateReport() {
+    showToast('Generating report...', 'info');
+    loadReportData();
+}
+
+function exportReport() {
+    const modal = new bootstrap.Modal(document.getElementById('exportModal'));
+    modal.show();
+}
+
+function confirmExport() {
+    const format = document.getElementById('export-format').value;
+    const sections = {
+        summary: document.getElementById('include-summary').checked,
+        charts: document.getElementById('include-charts').checked,
+        trades: document.getElementById('include-trades').checked,
+        risk: document.getElementById('include-risk').checked
+    };
+    
+    const filters = {
+        start_date: document.getElementById('start-date').value,
+        end_date: document.getElementById('end-date').value,
+        pairs: Array.from(document.getElementById('trading-pairs').selectedOptions).map(o => o.value),
+        format: format,
+        sections: sections
+    };
+    
+    fetch('/api/reports/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filters)
+    })
+    .then(response => response.blob())
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `trading_report_${new Date().toISOString().split('T')[0]}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+        bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
+        showToast('Report exported successfully', 'success');
+    })
+    .catch(error => {
+        console.error('Error exporting report:', error);
+        showToast('Error exporting report', 'error');
+    });
+}
+
+function exportTrades() {
+    const filters = {
+        start_date: document.getElementById('start-date').value,
+        end_date: document.getElementById('end-date').value,
+        pairs: Array.from(document.getElementById('trading-pairs').selectedOptions).map(o => o.value)
+    };
+    
+    fetch('/api/reports/trades/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filters)
+    })
+    .then(response => response.blob())
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `trades_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+        showToast('Trades exported successfully', 'success');
+    });
+}
+
+function scheduleReport() {
+    showToast('Report scheduling feature coming soon', 'info');
+}
+
+function updateChartPeriod() {
+    loadReportData();
+}
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(value);
+}
+</script>
+{% endblock %}

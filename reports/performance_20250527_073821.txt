@@ -1,0 +1,17 @@
+
+📊 RAPPORT DE PERFORMANCE AlphaBeta808
+═══════════════════════════════════════
+⏱️  Temps d'activité: 6:17:36.560719
+📉 Paires actives: 5
+Signals Générés: 1665
+Signals Traités: 1665
+Ordres Exécutés (API): 0 (ceci compte les soumissions, pas les fills)
+Trades Réussis (Filled): 0
+Trades Échoués (API/Filled): 0
+💰 P&L Journalier (Estimé): $0.00
+Exposition Actuelle (Estimée): $0.00
+Erreurs: 0
+Dernière MAJ Modèle: 2025-05-27 07:38:21.224392
+Dernier Health Check: None
+═══════════════════════════════════════
+            

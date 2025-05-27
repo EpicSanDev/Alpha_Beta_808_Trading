@@ -1,0 +1,999 @@
+{% extends "base.html" %}
+
+{% block title %}Modèles ML - AlphaBeta808 Trading{% endblock %}
+{% block page_title %}Gestion des Modèles ML{% endblock %}
+
+{% block extra_css %}
+<style>
+    .model-card {
+        background: white;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1.5rem;
+        transition: transform 0.2s ease;
+    }
+    
+    .model-card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .model-status {
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+    
+    .status-active {
+        background-color: rgba(5, 150, 105, 0.1);
+        color: var(--success-color);
+    }
+    
+    .status-inactive {
+        background-color: rgba(156, 163, 175, 0.1);
+        color: var(--text-muted);
+    }
+    
+    .status-training {
+        background-color: rgba(217, 119, 6, 0.1);
+        color: var(--warning-color);
+    }
+    
+    .model-metric {
+        text-align: center;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    
+    .metric-label {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+    
+    .performance-bar {
+        height: 8px;
+        background-color: var(--border-color);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+    
+    .performance-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+    
+    .feature-importance {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .feature-item {
+        display: flex;
+        justify-content: between;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .feature-item:last-child {
+        border-bottom: none;
+    }
+    
+    .feature-bar {
+        height: 4px;
+        background-color: var(--primary-color);
+        border-radius: 2px;
+        margin-top: 0.25rem;
+    }
+    
+    .training-progress {
+        background-color: var(--border-color);
+        border-radius: 0.5rem;
+        height: 20px;
+        overflow: hidden;
+    }
+    
+    .training-progress-bar {
+        background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        height: 100%;
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Model Overview -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">Modèles Actifs</div>
+                    <div class="metric-value text-success" id="activeModels">0</div>
+                </div>
+                <div class="text-success">
+                    <i class="fas fa-brain fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">Performance Moyenne</div>
+                    <div class="metric-value text-primary" id="avgPerformance">0%</div>
+                </div>
+                <div class="text-primary">
+                    <i class="fas fa-chart-line fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">Dernière Mise à Jour</div>
+                    <div class="metric-value text-info" id="lastUpdate">--</div>
+                </div>
+                <div class="text-info">
+                    <i class="fas fa-clock fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="metric-label">En Formation</div>
+                    <div class="metric-value text-warning" id="trainingModels">0</div>
+                </div>
+                <div class="text-warning">
+                    <i class="fas fa-cogs fa-2x"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Actions Rapides</h5>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" onclick="trainNewModel()">
+                            <i class="fas fa-plus me-1"></i>Entraîner Nouveau Modèle
+                        </button>
+                        <button class="btn btn-success" onclick="window.location.href='{{ url_for('optimization') }}'">
+                            <i class="fas fa-cogs me-1"></i>Optimiser Modèles
+                        </button>
+                        <button class="btn btn-info" onclick="refreshModels()">
+                            <i class="fas fa-refresh me-1"></i>Actualiser
+                        </button>
+                        <button class="btn btn-warning" onclick="retrainAllModels()">
+                            <i class="fas fa-redo me-1"></i>Réentraîner Tout
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Models List -->
+<div class="row" id="modelsContainer">
+    <!-- Models will be loaded here -->
+</div>
+
+<!-- Training Progress Modal -->
+<div class="modal fade" id="trainingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-brain me-2"></i>Entraînement en Cours
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Modèle: <span id="trainingModelName">--</span></label>
+                    <div class="training-progress">
+                        <div class="training-progress-bar" id="trainingProgressBar" style="width: 0%">0%</div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Epoch actuel</label>
+                            <div class="fw-semibold" id="currentEpoch">0 / 0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Temps estimé restant</label>
+                            <div class="fw-semibold" id="estimatedTime">--</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Score de Validation</label>
+                            <div class="fw-semibold text-primary" id="validationScore">--</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Meilleur Score</label>
+                            <div class="fw-semibold text-success" id="bestScore">--</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Logs d'Entraînement</label>
+                    <div class="border rounded p-2" style="height: 200px; overflow-y: auto; background-color: #f8f9fa; font-family: monospace; font-size: 0.875rem;" id="trainingLogs">
+                        Démarrage de l'entraînement...<br>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" onclick="stopTraining()">
+                    <i class="fas fa-stop me-1"></i>Arrêter l'Entraînement
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Model Details Modal -->
+<div class="modal fade" id="modelDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle me-2"></i>Détails du Modèle
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <!-- Model Performance Chart -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">Performance Historique</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="modelPerformanceChart" style="height: 300px;"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Feature Importance -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">Importance des Features</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="featureImportanceChart" style="height: 400px;">
+                                    <canvas id="featureChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <!-- Model Info -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">Informations du Modèle</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Type</label>
+                                    <div class="fw-semibold" id="modelType">--</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Symbole</label>
+                                    <div class="fw-semibold" id="modelSymbol">--</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Date de Création</label>
+                                    <div class="fw-semibold" id="modelCreated">--</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Dernière Mise à Jour</label>
+                                    <div class="fw-semibold" id="modelUpdated">--</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Performance Metrics -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">Métriques de Performance</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="model-metric">
+                                    <div class="metric-value text-primary" id="modelAccuracy">--</div>
+                                    <div class="metric-label">Précision</div>
+                                </div>
+                                <div class="model-metric">
+                                    <div class="metric-value text-success" id="modelSharpe">--</div>
+                                    <div class="metric-label">Ratio de Sharpe</div>
+                                </div>
+                                <div class="model-metric">
+                                    <div class="metric-value text-info" id="modelWinRate">--</div>
+                                    <div class="metric-label">Taux de Réussite</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Model Actions -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">Actions</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-primary" id="activateModelBtn">
+                                        <i class="fas fa-play me-1"></i>Activer
+                                    </button>
+                                    <button class="btn btn-warning" id="retrainModelBtn">
+                                        <i class="fas fa-redo me-1"></i>Réentraîner
+                                    </button>
+                                    <button class="btn btn-info" id="testModelBtn">
+                                        <i class="fas fa-vial me-1"></i>Tester
+                                    </button>
+                                    <button class="btn btn-danger" id="deleteModelBtn">
+                                        <i class="fas fa-trash me-1"></i>Supprimer
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Variables globales
+    let models = [];
+    let currentModelId = null;
+    let trainingInterval = null;
+    let modelPerformanceChart = null;
+    let featureChart = null;
+    
+    // Initialisation
+    document.addEventListener('DOMContentLoaded', function() {
+        loadModels();
+        initializeCharts();
+    });
+    
+    // Chargement des modèles
+    async function loadModels() {
+        try {
+            // Remplacer la simulation par un appel API réel
+            // Supposons un endpoint /api/models qui retourne une liste de modèles
+            const response = await fetch('/api/models'); // Assurez-vous que cet endpoint existe dans app_enhanced.py
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            
+            // Assumons que 'data' est un objet avec une clé 'models' qui est un tableau,
+            // ou que 'data' est directement le tableau de modèles.
+            // Si l'API retourne {success: true, data: [...]}, adapter ici.
+            // Pour l'instant, supposons que data.models est le tableau.
+            // Si l'API /api/models retourne directement la liste : models = data;
+            // Si l'API retourne { "success": true, "models": [...] } : models = data.models || [];
+            
+            // Pour correspondre à la structure de l'API /api/optimization/history qui retourne directement une liste:
+            models = data || []; // Si l'API retourne directement la liste.
+                                 // Si elle retourne un objet { "models": [...] }, alors models = data.models || [];
+
+            // Si l'API retourne un objet avec une clé 'data' contenant la liste :
+            // models = data.data || [];
+            // Ou si l'API retourne un objet avec une clé 'models' :
+            // models = data.models || [];
+
+            // Le plus probable est que l'API retourne un objet avec une clé 'models'
+            // ou une clé 'data' qui contient la liste.
+            // Si l'API /api/models est similaire à /api/alerts, elle pourrait retourner {success: true, alerts: []}
+            // donc ici ce serait {success: true, models: []}
+            // if (data.success && data.models) {
+            //    models = data.models;
+            // } else {
+            //    models = [];
+            //    console.error('Failed to load models or no models found:', data.error || 'No models in response');
+            // }
+            // Pour l'instant, on va supposer que l'API /api/models retourne directement la liste.
+            // Si ce n'est pas le cas, il faudra ajuster.
+
+            // Pour être plus robuste, vérifions si la réponse est un tableau
+            if (Array.isArray(data)) {
+                models = data;
+            } else if (data && Array.isArray(data.models)) { // Structure commune { "models": [] }
+                models = data.models;
+            } else if (data && Array.isArray(data.data)) { // Autre structure commune { "data": [] }
+                models = data.data;
+            }
+             else {
+                models = []; // Fallback à une liste vide
+                console.warn('La réponse de /api/models n\'est pas un tableau ou n\'a pas la structure attendue.', data);
+            }
+
+
+            // Ajouter des données simulées pour performance_history et feature_importance si elles ne sont pas fournies par l'API
+            models.forEach(model => {
+                if (!model.performance_history) {
+                    model.performance_history = generatePerformanceHistory(); // Fonction de simulation existante
+                }
+                if (!model.feature_importance) {
+                    model.feature_importance = generateFeatureImportance(); // Fonction de simulation existante
+                }
+            });
+            
+            updateModelStats();
+            renderModels();
+            
+        } catch (error) {
+            console.error('Erreur lors du chargement des modèles:', error);
+            showToast('Erreur lors du chargement des modèles', 'danger');
+            // Afficher un message d'erreur dans le conteneur des modèles
+            const container = document.getElementById('modelsContainer');
+            container.innerHTML = `
+                <div class="col-12">
+                    <div class="text-center text-danger py-5">
+                        <i class="fas fa-exclamation-triangle fa-3x mb-3"></i><br>
+                        <h5>Erreur de chargement des modèles</h5>
+                        <p>${error.message}</p>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    // Mise à jour des statistiques
+    function updateModelStats() {
+        const activeModels = models.filter(m => m.status === 'active').length;
+        const trainingModels = models.filter(m => m.status === 'training').length;
+        const avgPerformance = models.length > 0 ? 
+            models.reduce((sum, m) => sum + m.accuracy, 0) / models.length : 0;
+        
+        document.getElementById('activeModels').textContent = activeModels;
+        document.getElementById('trainingModels').textContent = trainingModels;
+        document.getElementById('avgPerformance').textContent = formatPercentage(avgPerformance * 100);
+        
+        // Dernière mise à jour
+        const latestUpdate = models.reduce((latest, model) => {
+            const modelDate = new Date(model.updated_at);
+            return modelDate > latest ? modelDate : latest;
+        }, new Date(0));
+        
+        document.getElementById('lastUpdate').textContent = latestUpdate.toLocaleDateString('fr-FR');
+    }
+    
+    // Rendu des modèles
+    function renderModels() {
+        const container = document.getElementById('modelsContainer');
+        
+        if (models.length === 0) {
+            container.innerHTML = `
+                <div class="col-12">
+                    <div class="text-center text-muted py-5">
+                        <i class="fas fa-brain fa-3x mb-3"></i><br>
+                        <h5>Aucun modèle disponible</h5>
+                        <p>Cliquez sur "Entraîner Nouveau Modèle" pour commencer</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = models.map(model => `
+            <div class="col-lg-6 col-xl-4">
+                <div class="model-card">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="mb-1">${model.name}</h6>
+                            <small class="text-muted">${model.type}</small>
+                        </div>
+                        <span class="model-status status-${model.status}">
+                            ${getStatusText(model.status)}
+                        </span>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <div class="text-center">
+                                <div class="fw-semibold text-primary">${formatPercentage(model.accuracy * 100)}</div>
+                                <small class="text-muted">Précision</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-center">
+                                <div class="fw-semibold text-success">${formatNumber(model.sharpe_ratio, 2)}</div>
+                                <small class="text-muted">Sharpe</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-center">
+                                <div class="fw-semibold text-info">${formatPercentage(model.win_rate * 100)}</div>
+                                <small class="text-muted">Win Rate</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="performance-bar">
+                        <div class="performance-fill bg-primary" style="width: ${model.accuracy * 100}%"></div>
+                    </div>
+                    
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-sm btn-outline-primary flex-fill" onclick="showModelDetails('${model.id}')">
+                            <i class="fas fa-info-circle me-1"></i>Détails
+                        </button>
+                        ${model.status === 'active' ? 
+                            `<button class="btn btn-sm btn-outline-warning" onclick="deactivateModel('${model.id}')">
+                                <i class="fas fa-pause me-1"></i>Désactiver
+                            </button>` :
+                            model.status === 'inactive' ?
+                            `<button class="btn btn-sm btn-outline-success" onclick="activateModel('${model.id}')">
+                                <i class="fas fa-play me-1"></i>Activer
+                            </button>` :
+                            `<button class="btn btn-sm btn-outline-info" onclick="showTrainingProgress('${model.id}')">
+                                <i class="fas fa-eye me-1"></i>Voir
+                            </button>`
+                        }
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // Initialisation des graphiques
+    function initializeCharts() {
+        // Graphique de performance du modèle
+        const ctx1 = document.createElement('canvas');
+        ctx1.id = 'modelPerformanceChartCanvas';
+        
+        // Graphique d'importance des features
+        const ctx2 = document.createElement('canvas');
+        ctx2.id = 'featureChartCanvas';
+    }
+    
+    // Affichage des détails d'un modèle
+    function showModelDetails(modelId) {
+        const model = models.find(m => m.id === modelId);
+        if (!model) return;
+        
+        currentModelId = modelId;
+        
+        // Remplir les informations
+        document.getElementById('modelType').textContent = model.type;
+        document.getElementById('modelSymbol').textContent = model.symbol;
+        document.getElementById('modelCreated').textContent = new Date(model.created_at).toLocaleDateString('fr-FR');
+        document.getElementById('modelUpdated').textContent = new Date(model.updated_at).toLocaleDateString('fr-FR');
+        
+        // Métriques
+        document.getElementById('modelAccuracy').textContent = formatPercentage(model.accuracy * 100);
+        document.getElementById('modelSharpe').textContent = formatNumber(model.sharpe_ratio, 2);
+        document.getElementById('modelWinRate').textContent = formatPercentage(model.win_rate * 100);
+        
+        // Configuration des boutons d'action
+        setupModelActionButtons(model);
+        
+        // Créer les graphiques
+        createModelPerformanceChart(model.performance_history);
+        createFeatureImportanceChart(model.feature_importance);
+        
+        // Afficher le modal
+        new bootstrap.Modal(document.getElementById('modelDetailsModal')).show();
+    }
+    
+    // Configuration des boutons d'action du modèle
+    function setupModelActionButtons(model) {
+        const activateBtn = document.getElementById('activateModelBtn');
+        const retrainBtn = document.getElementById('retrainModelBtn');
+        const testBtn = document.getElementById('testModelBtn');
+        const deleteBtn = document.getElementById('deleteModelBtn');
+        
+        // Bouton activer/désactiver
+        if (model.status === 'active') {
+            activateBtn.textContent = 'Désactiver';
+            activateBtn.className = 'btn btn-warning';
+            activateBtn.onclick = () => deactivateModel(model.id);
+        } else {
+            activateBtn.textContent = 'Activer';
+            activateBtn.className = 'btn btn-primary';
+            activateBtn.onclick = () => activateModel(model.id);
+        }
+        
+        // Autres boutons
+        retrainBtn.onclick = () => retrainModel(model.id);
+        testBtn.onclick = () => testModel(model.id);
+        deleteBtn.onclick = () => deleteModel(model.id);
+    }
+    
+    // Création du graphique de performance
+    function createModelPerformanceChart(data) {
+        const canvas = document.getElementById('modelPerformanceChart');
+        const ctx = canvas.getContext('2d');
+        
+        if (modelPerformanceChart) {
+            modelPerformanceChart.destroy();
+        }
+        
+        modelPerformanceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(d => d.date),
+                datasets: [{
+                    label: 'Performance',
+                    data: data.map(d => d.value),
+                    borderColor: 'rgb(37, 99, 235)',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value.toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Création du graphique d'importance des features
+    function createFeatureImportanceChart(data) {
+        const canvas = document.getElementById('featureChart');
+        const ctx = canvas.getContext('2d');
+        
+        if (featureChart) {
+            featureChart.destroy();
+        }
+        
+        featureChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => d.feature),
+                datasets: [{
+                    label: 'Importance',
+                    data: data.map(d => d.importance),
+                    backgroundColor: 'rgba(37, 99, 235, 0.8)',
+                    borderColor: 'rgb(37, 99, 235)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        max: 1
+                    }
+                }
+            }
+        });
+    }
+    
+    // Actions sur les modèles
+    async function activateModel(modelId) {
+        try {
+            // Supposons un endpoint /api/models/<model_id>/activate (POST)
+            const response = await fetch(`/api/models/${modelId}/activate`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                const model = models.find(m => m.id === modelId);
+                if (model) model.status = 'active';
+                showToast(`Modèle ${model ? model.name : modelId} activé`, 'success');
+                updateModelStats();
+                renderModels();
+            } else {
+                showToast(data.error || 'Erreur lors de l\'activation', 'danger');
+            }
+        } catch (error) {
+            showToast('Erreur de communication lors de l\'activation', 'danger');
+        }
+    }
+    
+    async function deactivateModel(modelId) {
+        try {
+            // Supposons un endpoint /api/models/<model_id>/deactivate (POST)
+            const response = await fetch(`/api/models/${modelId}/deactivate`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                const model = models.find(m => m.id === modelId);
+                if (model) model.status = 'inactive';
+                showToast(`Modèle ${model ? model.name : modelId} désactivé`, 'info');
+                updateModelStats();
+                renderModels();
+            } else {
+                showToast(data.error || 'Erreur lors de la désactivation', 'danger');
+            }
+        } catch (error) {
+            showToast('Erreur de communication lors de la désactivation', 'danger');
+        }
+    }
+    
+    async function retrainModel(modelId) {
+        if (confirm('Êtes-vous sûr de vouloir réentraîner ce modèle ?')) {
+            try {
+                // Supposons un endpoint /api/models/<model_id>/retrain (POST)
+                const response = await fetch(`/api/models/${modelId}/retrain`, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    const model = models.find(m => m.id === modelId);
+                    if (model) model.status = 'training'; // Le backend devrait confirmer le statut
+                    showToast(`Réentraînement de ${model ? model.name : modelId} démarré`, 'info');
+                    updateModelStats();
+                    renderModels();
+                    showTrainingProgress(modelId); // Afficher le modal de progression
+                } else {
+                    showToast(data.error || 'Erreur lors du réentraînement', 'danger');
+                }
+            } catch (error) {
+                 showToast('Erreur de communication lors du réentraînement', 'danger');
+            }
+        }
+    }
+    
+    async function testModel(modelId) {
+        // Supposons un endpoint /api/models/<model_id>/test (POST)
+        // Cette fonction pourrait ouvrir un modal avec les résultats du test.
+        showToast(`Test du modèle ${modelId} lancé (simulation)`, 'info');
+        // fetch(`/api/models/${modelId}/test`, { method: 'POST' })
+        // .then(response => response.json())
+        // .then(data => { /* ... gérer la réponse ... */ });
+    }
+    
+    async function deleteModel(modelId) {
+        if (confirm('Êtes-vous sûr de vouloir supprimer ce modèle ? Cette action est irréversible.')) {
+            try {
+                // Supposons un endpoint /api/models/<model_id> (DELETE)
+                const response = await fetch(`/api/models/${modelId}`, { method: 'DELETE' });
+                const data = await response.json();
+                if (data.success) {
+                    models = models.filter(m => m.id !== modelId);
+                    showToast(`Modèle ${modelId} supprimé`, 'warning');
+                    updateModelStats();
+                    renderModels();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('modelDetailsModal'));
+                    if (modal) modal.hide();
+                } else {
+                    showToast(data.error || 'Erreur lors de la suppression', 'danger');
+                }
+            } catch (error) {
+                showToast('Erreur de communication lors de la suppression', 'danger');
+            }
+        }
+    }
+    
+    // Entraînement d'un nouveau modèle
+    async function trainNewModel() {
+        // Pourrait ouvrir un modal plus complexe pour configurer le nouveau modèle
+        const modelName = prompt('Nom du nouveau modèle (ex: RandomForest_BTCUSDT_v2):');
+        const modelType = prompt('Type de modèle (ex: RandomForest, XGBoost):', 'RandomForest');
+        const modelSymbol = prompt('Symbole (ex: BTCUSDT):', 'BTCUSDT');
+
+        if (modelName && modelType && modelSymbol) {
+            const newModelData = {
+                name: modelName,
+                type: modelType,
+                symbol: modelSymbol,
+                // Autres paramètres de configuration initiaux pourraient être envoyés ici
+            };
+            try {
+                // Supposons un endpoint /api/models/train (POST) pour initier l'entraînement
+                const response = await fetch('/api/models/train', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(newModelData)
+                });
+                const data = await response.json();
+
+                if (data.success && data.model) { // Supposons que l'API retourne le nouveau modèle avec son ID et statut
+                    models.push(data.model); // Ajouter le modèle retourné par l'API
+                    updateModelStats();
+                    renderModels();
+                    showToast(`Entraînement de ${data.model.name} démarré`, 'info');
+                    showTrainingProgress(data.model.id); // Afficher la progression pour le nouveau modèle
+                } else {
+                    showToast(data.error || 'Erreur lors du démarrage de l\'entraînement', 'danger');
+                }
+            } catch (error) {
+                showToast('Erreur de communication pour démarrer l\'entraînement', 'danger');
+            }
+        }
+    }
+    
+    // Affichage du progrès d'entraînement
+    function showTrainingProgress(modelId) {
+        const model = models.find(m => m.id === modelId);
+        if (!model || model.status !== 'training') return;
+        
+        document.getElementById('trainingModelName').textContent = model.name;
+        
+        // Simuler le progrès d'entraînement
+        let progress = 0;
+        let epoch = 0;
+        const totalEpochs = 100;
+        
+        const modal = new bootstrap.Modal(document.getElementById('trainingModal'));
+        modal.show();
+        
+        trainingInterval = setInterval(() => {
+            progress += Math.random() * 5;
+            epoch = Math.floor((progress / 100) * totalEpochs);
+            
+            if (progress >= 100) {
+                progress = 100;
+                clearInterval(trainingInterval);
+                
+                // Terminer l'entraînement
+                model.status = 'active';
+                model.accuracy = 0.75 + Math.random() * 0.15;
+                model.sharpe_ratio = 1.2 + Math.random() * 0.8;
+                model.win_rate = 0.6 + Math.random() * 0.2;
+                
+                updateModelStats();
+                renderModels();
+                
+                showToast(`Entraînement de ${model.name} terminé`, 'success');
+                
+                setTimeout(() => modal.hide(), 2000);
+            }
+            
+            // Mettre à jour l'interface
+            document.getElementById('trainingProgressBar').style.width = progress + '%';
+            document.getElementById('trainingProgressBar').textContent = Math.round(progress) + '%';
+            document.getElementById('currentEpoch').textContent = `${epoch} / ${totalEpochs}`;
+            document.getElementById('estimatedTime').textContent = progress < 100 ? 
+                Math.round((100 - progress) * 2) + ' secondes' : 'Terminé';
+            
+            // Ajouter des logs
+            if (Math.random() > 0.7) {
+                const logs = document.getElementById('trainingLogs');
+                logs.innerHTML += `Epoch ${epoch}: validation_accuracy = ${(0.5 + Math.random() * 0.3).toFixed(4)}<br>`;
+                logs.scrollTop = logs.scrollHeight;
+            }
+        }, 500);
+    }
+    
+    // Arrêter l'entraînement
+    function stopTraining() {
+        if (trainingInterval) {
+            clearInterval(trainingInterval);
+            trainingInterval = null;
+        }
+        
+        if (currentModelId) {
+            const model = models.find(m => m.id === currentModelId);
+            if (model && model.status === 'training') {
+                model.status = 'inactive';
+                updateModelStats();
+                renderModels();
+            }
+        }
+        
+        showToast('Entraînement arrêté', 'warning');
+        bootstrap.Modal.getInstance(document.getElementById('trainingModal')).hide();
+    }
+    
+    // Réentraîner tous les modèles
+    async function retrainAllModels() {
+        if (confirm('Êtes-vous sûr de vouloir réentraîner tous les modèles ? Cela peut prendre du temps.')) {
+            models.forEach(model => {
+                if (model.status !== 'training') {
+                    model.status = 'training';
+                }
+            });
+            
+            updateModelStats();
+            renderModels();
+            showToast('Réentraînement de tous les modèles démarré', 'info');
+        }
+    }
+    
+    // Actualiser les modèles
+    function refreshModels() {
+        loadModels();
+        showToast('Modèles actualisés', 'info');
+    }
+    
+    // Obtenir le texte de statut
+    function getStatusText(status) {
+        switch (status) {
+            case 'active': return 'Actif';
+            case 'inactive': return 'Inactif';
+            case 'training': return 'En formation';
+            default: return 'Inconnu';
+        }
+    }
+    
+    // Génération de données simulées
+    function generatePerformanceHistory() {
+        const data = [];
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+        
+        for (let i = 0; i < 30; i++) {
+            const date = new Date(startDate);
+            date.setDate(date.getDate() + i);
+            data.push({
+                date: date.toISOString().split('T')[0],
+                value: 0.5 + Math.random() * 0.3
+            });
+        }
+        
+        return data;
+    }
+    
+    function generateFeatureImportance() {
+        const features = [
+            'RSI_14', 'MA_20', 'MACD', 'Volume_Ratio', 'Price_Change',
+            'Bollinger_Position', 'ATR', 'Momentum', 'Volatility', 'Support_Resistance'
+        ];
+        
+        return features.map(feature => ({
+            feature: feature,
+            importance: Math.random()
+        })).sort((a, b) => b.importance - a.importance);
+    }
+</script>
+{% endblock %}

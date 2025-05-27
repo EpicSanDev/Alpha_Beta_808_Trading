@@ -1,0 +1,558 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio - AlphaBeta808 Trading{% endblock %}
+{% block page_title %}Portfolio Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .portfolio-card {
+        background: white;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        margin-bottom: 1.5rem;
+    }
+    
+    .portfolio-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+    
+    .balance-item {
+        padding: 1rem;
+        border-left: 4px solid var(--primary-color);
+        background: rgba(var(--primary-rgb), 0.05);
+        border-radius: 0 0.5rem 0.5rem 0;
+        margin-bottom: 0.75rem;
+    }
+    
+    .position-item {
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        margin-bottom: 0.75rem;
+        transition: all 0.2s ease;
+    }
+    
+    .position-item:hover {
+        border-color: var(--primary-color);
+        background: rgba(var(--primary-rgb), 0.02);
+    }
+    
+    .pnl-positive {
+        color: var(--success-color);
+    }
+    
+    .pnl-negative {
+        color: var(--danger-color);
+    }
+    
+    .sync-button {
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .sync-button.syncing::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        animation: shimmer 1.5s infinite;
+    }
+    
+    @keyframes shimmer {
+        0% { left: -100%; }
+        100% { left: 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <!-- Portfolio Summary -->
+    <div class="col-12">
+        <div class="portfolio-card">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="text-center">
+                        <h3 class="text-primary mb-1" id="totalPortfolioValue">$0.00</h3>
+                        <p class="text-muted mb-0">Valeur Totale</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center">
+                        <h3 class="text-success mb-1" id="totalPnl">$0.00</h3>
+                        <p class="text-muted mb-0">P&L Total</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center">
+                        <h3 class="text-info mb-1" id="totalPositions">0</h3>
+                        <p class="text-muted mb-0">Positions Actives</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center">
+                        <button class="btn btn-primary sync-button" onclick="syncBalances()" id="syncButton">
+                            <i class="fas fa-sync-alt me-1"></i>
+                            Synchroniser
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Account Balances -->
+    <div class="col-md-6 mb-4">
+        <div class="portfolio-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">
+                    <i class="fas fa-wallet me-2"></i>
+                    Soldes des Comptes
+                </h5>
+                <small class="text-muted" id="balancesLastUpdate">Dernière MAJ: --</small>
+            </div>
+            <div id="balancesList">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-spinner fa-spin fa-2x mb-2"></i><br>
+                    Chargement des soldes...
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Open Positions -->
+    <div class="col-md-6 mb-4">
+        <div class="portfolio-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Positions Ouvertes
+                </h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshPositions()">
+                    <i class="fas fa-refresh"></i>
+                </button>
+            </div>
+            <div id="positionsList">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-spinner fa-spin fa-2x mb-2"></i><br>
+                    Chargement des positions...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Portfolio Performance Chart -->
+<div class="row">
+    <div class="col-12">
+        <div class="portfolio-card">
+            <h5 class="mb-3">
+                <i class="fas fa-chart-area me-2"></i>
+                Performance du Portfolio
+            </h5>
+            <div class="btn-group mb-3" role="group">
+                <button type="button" class="btn btn-outline-primary btn-sm active" onclick="changePortfolioPeriod('1D')">1J</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="changePortfolioPeriod('7D')">7J</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="changePortfolioPeriod('30D')">30J</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="changePortfolioPeriod('90D')">90J</button>
+            </div>
+            <div style="height: 400px;">
+                <canvas id="portfolioChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let portfolioChart;
+    let currentPeriod = '1D';
+    
+    // Initialize portfolio page
+    document.addEventListener('DOMContentLoaded', function() {
+        initializePortfolioChart();
+        loadPortfolioData();
+        loadBalances();
+        loadPositions();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            loadPortfolioData();
+            loadBalances();
+            loadPositions();
+        }, 30000);
+    });
+    
+    // Initialize portfolio performance chart
+    function initializePortfolioChart() {
+        const ctx = document.getElementById('portfolioChart').getContext('2d');
+        portfolioChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Valeur du Portfolio',
+                    data: [],
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Temps'
+                        }
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Valeur ($)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return 'Valeur: ' + formatCurrency(context.parsed.y);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Load portfolio summary data
+    async function loadPortfolioData() {
+        try {
+            const [valueResponse, pnlResponse] = await Promise.all([
+                apiCall('/api/portfolio/value'), // Cet endpoint retourne {success, paper_value, real_value, current_value}
+                apiCall('/api/portfolio/pnl')   // Cet endpoint retourne {success, total_pnl, total_pnl_percent, daily_pnl, monthly_pnl, open_positions}
+            ]);
+            
+            if (valueResponse.success) {
+                // Utiliser 'current_value' qui dépend du mode de trading actif
+                document.getElementById('totalPortfolioValue').textContent =
+                    formatCurrency(valueResponse.current_value || 0);
+            } else {
+                console.error("Erreur API /api/portfolio/value:", valueResponse.error);
+                document.getElementById('totalPortfolioValue').textContent = formatCurrency(0);
+            }
+            
+            if (pnlResponse.success) {
+                const totalPnl = pnlResponse.total_pnl || 0; // Accès direct aux propriétés
+                const pnlElement = document.getElementById('totalPnl');
+                pnlElement.textContent = formatCurrency(totalPnl);
+                pnlElement.className = totalPnl >= 0 ? 'text-success mb-1' : 'text-danger mb-1';
+                // Mettre à jour le nombre de positions actives depuis cette réponse aussi
+                document.getElementById('totalPositions').textContent = pnlResponse.open_positions || 0;
+            } else {
+                console.error("Erreur API /api/portfolio/pnl:", pnlResponse.error);
+                const pnlElement = document.getElementById('totalPnl');
+                pnlElement.textContent = formatCurrency(0);
+                pnlElement.className = 'text-muted mb-1'; // Style neutre en cas d'erreur
+                document.getElementById('totalPositions').textContent = 0;
+            }
+            
+        } catch (error) {
+            console.error('Erreur lors du chargement des données portfolio:', error);
+            document.getElementById('totalPortfolioValue').textContent = formatCurrency(0);
+            const pnlElement = document.getElementById('totalPnl');
+            pnlElement.textContent = formatCurrency(0);
+            pnlElement.className = 'text-muted mb-1';
+            document.getElementById('totalPositions').textContent = 0;
+        }
+    }
+    
+    // Load account balances
+    async function loadBalances() {
+        try {
+            const response = await apiCall('/api/portfolio/balances'); // Cet endpoint retourne {success, paper_balances, real_balances, current_balances}
+            if (response.success) {
+                const balancesList = document.getElementById('balancesList');
+                // Utiliser 'current_balances' qui dépend du mode de trading actif
+                const balancesData = response.current_balances || {};
+                const balancesArray = Object.keys(balancesData).map(asset => ({
+                    asset: asset,
+                    // Supposons que chaque valeur dans balancesData est le montant total (free + locked)
+                    // L'API backend devrait idéalement fournir 'free' et 'locked' séparément si nécessaire.
+                    // Pour l'instant, nous affichons la valeur totale comme 'free'.
+                    free: parseFloat(balancesData[asset] || 0),
+                    locked: 0 // Placeholder, car l'API actuelle ne semble pas fournir 'locked' dans ce format
+                }));
+                
+                if (balancesArray.length === 0) {
+                    balancesList.innerHTML = `
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-wallet fa-2x mb-2"></i><br>
+                            Aucun solde disponible
+                        </div>
+                    `;
+                    return;
+                }
+                
+                balancesList.innerHTML = balancesArray.map(balance => `
+                    <div class="balance-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">${balance.asset}</h6>
+                                <!-- <small class="text-muted">${balance.asset_name || balance.asset}</small> asset_name n'est pas fourni -->
+                            </div>
+                            <div class="text-end">
+                                <div class="fw-bold">${balance.free.toFixed(8)}</div>
+                                <small class="text-muted">Bloqué: ${balance.locked.toFixed(8)}</small>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+                document.getElementById('balancesLastUpdate').textContent =
+                    'Dernière MAJ: ' + new Date().toLocaleTimeString('fr-FR');
+            } else {
+                console.error("Erreur API /api/portfolio/balances:", response.error);
+                 document.getElementById('balancesList').innerHTML = `
+                    <div class="text-center text-danger py-4">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                        Erreur lors du chargement des soldes: ${response.error || ''}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des soldes:', error);
+            document.getElementById('balancesList').innerHTML = `
+                <div class="text-center text-danger py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                    Erreur de communication lors du chargement des soldes.
+                </div>
+            `;
+        }
+    }
+    
+    // Load open positions
+    async function loadPositions() {
+        try {
+            const response = await apiCall('/api/portfolio/positions'); // Cet endpoint retourne {success, positions}
+            const positionsList = document.getElementById('positionsList');
+
+            if (response.success && response.positions) {
+                const positions = response.positions;
+                
+                // Mettre à jour le compteur total de positions si ce n'est pas déjà fait par loadPortfolioData (via /api/portfolio/pnl)
+                // document.getElementById('totalPositions').textContent = positions.length;
+                // Il est préférable de laisser loadPortfolioData gérer 'totalPositions' car il provient d'une source plus globale (pnlResponse.open_positions)
+
+                if (positions.length === 0) {
+                    positionsList.innerHTML = `
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+                            Aucune position ouverte
+                        </div>
+                    `;
+                    return;
+                }
+                
+                positionsList.innerHTML = positions.map(position => {
+                    const pnl = parseFloat(position.pnl || 0); // Utiliser 'pnl' comme dans trading.html
+                    const pnlPercent = parseFloat(position.pnl_percent || 0);
+                    const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    const pnlIcon = pnl >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                    
+                    return `
+                        <div class="position-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${position.symbol} <span class="badge bg-${position.side.toLowerCase() === 'long' ? 'success' : 'danger'}">${position.side}</span></h6>
+                                    <small class="text-muted">Quantité: ${formatNumber(position.quantity, 6)}</small><br>
+                                    <small class="text-muted">Entrée: ${formatCurrency(position.entry_price || 0)}</small><br>
+                                    <small class="text-muted">Actuel: ${formatCurrency(position.current_price || 0)}</small>
+                                </div>
+                                <div class="text-end">
+                                    <div class="${pnlClass} fw-bold">
+                                        <i class="fas ${pnlIcon} me-1"></i>
+                                        ${formatCurrency(pnl)} (${formatPercentage(pnlPercent)})
+                                    </div>
+                                    <small class="text-muted">Marge: ${formatCurrency(position.margin_used || 0)}</small><br>
+                                    <small class="text-muted">Créée: ${new Date(position.created_at).toLocaleDateString()}</small>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                console.error("Erreur API /api/portfolio/positions:", response.error);
+                positionsList.innerHTML = `
+                    <div class="text-center text-danger py-4">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                        Erreur lors du chargement des positions: ${response.error || ''}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des positions:', error);
+            document.getElementById('positionsList').innerHTML = `
+                <div class="text-center text-danger py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                    Erreur de communication lors du chargement des positions.
+                </div>
+            `;
+        }
+    }
+    
+    // Synchronize balances with exchange
+    async function syncBalances() {
+        const button = document.getElementById('syncButton');
+        button.classList.add('syncing');
+        button.disabled = true;
+        
+        try {
+            const response = await apiCall('/api/balance/sync', 'POST'); // Cet endpoint est déjà défini
+            if (response.success) {
+                showToast('Soldes synchronisés avec succès. Rafraîchissement en cours...', 'success');
+                // Recharger les données affectées
+                await loadBalances(); // Recharger les soldes affichés
+                await loadPortfolioData(); // Recharger le résumé du portfolio qui dépend des soldes
+            } else {
+                showToast(`Échec de la synchronisation: ${response.error || 'Erreur inconnue'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur lors de la synchronisation des soldes:', error);
+            showToast('Erreur de communication lors de la synchronisation des soldes.', 'error');
+        } finally {
+            button.classList.remove('syncing');
+            button.disabled = false;
+        }
+    }
+    
+    // Refresh positions
+    function refreshPositions() {
+        loadPositions();
+        showToast('Positions actualisées', 'info');
+    }
+    
+    // Change portfolio chart period
+    function changePortfolioPeriod(period) {
+        currentPeriod = period;
+        
+        // Update active button
+        document.querySelectorAll('.btn-group button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        // Load portfolio performance data for the selected period
+        // This would be implemented based on your data structure
+        loadPortfolioPerformance(period);
+    }
+    
+    // Load portfolio performance data
+    async function loadPortfolioPerformance(period) {
+        try {
+            // Utiliser l'endpoint /api/reports/data qui peut filtrer par période
+            // La période (1D, 7D, 30D, 90D) doit être convertie en dates start_date et end_date
+            const endDate = new Date();
+            let startDate = new Date();
+            switch (period) {
+                case '1D':
+                    startDate.setDate(endDate.getDate() - 1);
+                    break;
+                case '7D':
+                    startDate.setDate(endDate.getDate() - 7);
+                    break;
+                case '30D':
+                    startDate.setDate(endDate.getDate() - 30);
+                    break;
+                case '90D':
+                    startDate.setDate(endDate.getDate() - 90);
+                    break;
+                default:
+                    startDate.setDate(endDate.getDate() - 7); // Défaut à 7 jours
+            }
+
+            const filters = {
+                start_date: startDate.toISOString().split('T')[0], // Format YYYY-MM-DD
+                end_date: endDate.toISOString().split('T')[0],     // Format YYYY-MM-DD
+                // 'symbols': [] // Peut être ajouté si on veut filtrer par symboles spécifiques
+            };
+
+            // L'endpoint /api/reports/data est POST
+            const response = await apiCall('/api/reports/data', 'POST', filters);
+            
+            // La réponse de /api/reports/data a une structure spécifique:
+            // response.charts.portfolio.labels et response.charts.portfolio.data
+            if (response && response.charts && response.charts.portfolio) {
+                const chartData = response.charts.portfolio;
+                portfolioChart.data.labels = chartData.labels || [];
+                portfolioChart.data.datasets[0].data = chartData.data || [];
+                portfolioChart.update();
+            } else {
+                console.error('Données de performance du portfolio non trouvées dans la réponse de /api/reports/data:', response);
+                // Optionnel: afficher un message d'erreur ou des données vides dans le graphique
+                 portfolioChart.data.labels = [];
+                 portfolioChart.data.datasets[0].data = [];
+                 portfolioChart.update();
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement de la performance du portfolio:', error);
+            // Optionnel: gérer l'erreur dans l'UI
+            portfolioChart.data.labels = [];
+            portfolioChart.data.datasets[0].data = [];
+            portfolioChart.update();
+        }
+    }
+    
+    // Utility functions
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 8
+        }).format(amount);
+    }
+    
+    async function apiCall(endpoint, method = 'GET', data = null) {
+        const options = {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        };
+        
+        if (data) {
+            options.body = JSON.stringify(data);
+        }
+        
+        const response = await fetch(endpoint, options);
+        return await response.json();
+    }
+    
+    function showToast(message, type) {
+        // Implementation would depend on your toast notification system
+        console.log(`${type.toUpperCase()}: ${message}`);
+    }
+</script>
+{% endblock %}

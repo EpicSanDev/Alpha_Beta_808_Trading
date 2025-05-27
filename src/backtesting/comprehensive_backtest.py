@@ -584,11 +584,29 @@ class ComprehensiveBacktester:
                 buy_trades = trades_df[trades_df['type'] == 'BUY']
                 sell_trades = trades_df[trades_df['type'] == 'SELL']
                 
-                # Win rate (approximation basée sur les trades)
+                # Win rate calculation based on actual trade outcomes
                 if len(sell_trades) > 0 and len(buy_trades) > 0:
-                    win_rate = 0.6  # Placeholder - calcul plus complexe nécessaire
+                    # Calculate actual win rate by comparing buy/sell pairs
+                    winning_trades = 0
+                    total_trade_pairs = 0
+                    
+                    # Simple approach: compare consecutive buy-sell pairs
+                    for i in range(min(len(buy_trades), len(sell_trades))):
+                        if 'price' in buy_trades.columns and 'price' in sell_trades.columns:
+                            buy_price = buy_trades.iloc[i]['price']
+                            sell_price = sell_trades.iloc[i]['price']
+                            if sell_price > buy_price:
+                                winning_trades += 1
+                            total_trade_pairs += 1
+                    
+                    win_rate = winning_trades / total_trade_pairs if total_trade_pairs > 0 else 0
                 else:
-                    win_rate = 0
+                    # Alternative: calculate based on daily returns
+                    if len(daily_returns) > 0:
+                        positive_returns = daily_returns[daily_returns > 0]
+                        win_rate = len(positive_returns) / len(daily_returns)
+                    else:
+                        win_rate = 0
         
         return {
             'total_return': total_return,

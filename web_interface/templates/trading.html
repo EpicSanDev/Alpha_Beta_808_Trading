@@ -1,0 +1,963 @@
+{% extends "base.html" %}
+
+{% block title %}Trading - AlphaBeta808 Trading{% endblock %}
+{% block page_title %}Trading Manuel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .trading-panel {
+        background: white;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .order-book {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    .order-book-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        font-family: 'Monaco', 'Menlo', monospace;
+    }
+    
+    .order-book-buy {
+        background-color: rgba(5, 150, 105, 0.1);
+        border-left: 3px solid var(--success-color);
+    }
+    
+    .order-book-sell {
+        background-color: rgba(220, 38, 38, 0.1);
+        border-left: 3px solid var(--danger-color);
+    }
+    
+    .price-display {
+        font-size: 2rem;
+        font-weight: 700;
+        font-family: 'Monaco', 'Menlo', monospace;
+    }
+    
+    .trade-form {
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+    }
+    
+    .trade-tabs .nav-link {
+        border: none;
+        padding: 0.75rem 1.5rem;
+        font-weight: 500;
+    }
+    
+    .trade-tabs .nav-link.active {
+        background-color: var(--primary-color);
+        color: white;
+        border-radius: 0.5rem;
+    }
+    
+    .quantity-buttons {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+    
+    .quantity-btn {
+        flex: 1;
+        padding: 0.5rem;
+        border: 1px solid var(--border-color);
+        background: white;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .quantity-btn:hover {
+        background-color: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+    }
+    
+    .position-card {
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .position-profit {
+        color: var(--success-color);
+    }
+    
+    .position-loss {
+        color: var(--danger-color);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Symbol Selection -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <label class="form-label me-3 mb-0">Symbole:</label>
+                        <select class="form-select" id="symbolSelect" style="width: auto;" onchange="changeSymbol()">
+                            <option value="BTCUSDT">BTCUSDT</option>
+                            <option value="ETHUSDT">ETHUSDT</option>
+                            <option value="ADAUSDT">ADAUSDT</option>
+                            <option value="DOTUSDT">DOTUSDT</option>
+                        </select>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="me-4">
+                            <span class="text-muted">Prix actuel:</span>
+                            <span class="price-display text-primary" id="currentPrice">$0.00</span>
+                        </div>
+                        <div class="me-4">
+                            <span class="text-muted">Variation 24h:</span>
+                            <span id="priceChange24h" class="fw-semibold">+0.00%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Trading Panel -->
+    <div class="col-lg-4 mb-4">
+        <div class="trading-panel">
+            <h5 class="mb-3">Placer un Ordre</h5>
+            
+            <!-- Trade Tabs -->
+            <ul class="nav nav-pills trade-tabs mb-3" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="buy-tab" data-bs-toggle="pill" data-bs-target="#buy-panel" type="button">
+                        <i class="fas fa-arrow-up me-1"></i>Acheter
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="sell-tab" data-bs-toggle="pill" data-bs-target="#sell-panel" type="button">
+                        <i class="fas fa-arrow-down me-1"></i>Vendre
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content">
+                <!-- Buy Panel -->
+                <div class="tab-pane fade show active" id="buy-panel">
+                    <form onsubmit="placeOrder('BUY'); return false;">
+                        <div class="mb-3">
+                            <label class="form-label">Type d'ordre</label>
+                            <select class="form-select" id="buyOrderType">
+                                <option value="MARKET">Marché</option>
+                                <option value="LIMIT">Limite</option>
+                                <option value="STOP_LOSS">Stop Loss</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3" id="buyPriceGroup">
+                            <label class="form-label">Prix</label>
+                            <input type="number" class="form-control" id="buyPrice" step="0.01" placeholder="0.00">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Quantité</label>
+                            <input type="number" class="form-control" id="buyQuantity" step="0.001" placeholder="0.000">
+                            <div class="quantity-buttons">
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('buy', 25)">25%</button>
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('buy', 50)">50%</button>
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('buy', 75)">75%</button>
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('buy', 100)">100%</button>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Total (USDT)</label>
+                            <input type="number" class="form-control" id="buyTotal" step="0.01" placeholder="0.00" readonly>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-plus me-1"></i>Acheter <span id="buySymbol">BTC</span>
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Sell Panel -->
+                <div class="tab-pane fade" id="sell-panel">
+                    <form onsubmit="placeOrder('SELL'); return false;">
+                        <div class="mb-3">
+                            <label class="form-label">Type d'ordre</label>
+                            <select class="form-select" id="sellOrderType">
+                                <option value="MARKET">Marché</option>
+                                <option value="LIMIT">Limite</option>
+                                <option value="STOP_LOSS">Stop Loss</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3" id="sellPriceGroup">
+                            <label class="form-label">Prix</label>
+                            <input type="number" class="form-control" id="sellPrice" step="0.01" placeholder="0.00">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Quantité</label>
+                            <input type="number" class="form-control" id="sellQuantity" step="0.001" placeholder="0.000">
+                            <div class="quantity-buttons">
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('sell', 25)">25%</button>
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('sell', 50)">50%</button>
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('sell', 75)">75%</button>
+                                <button type="button" class="quantity-btn" onclick="setQuantityPercent('sell', 100)">100%</button>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Total (USDT)</label>
+                            <input type="number" class="form-control" id="sellTotal" step="0.01" placeholder="0.00" readonly>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-danger w-100">
+                            <i class="fas fa-minus me-1"></i>Vendre <span id="sellSymbol">BTC</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Account Balance -->
+        <div class="trading-panel mt-3">
+            <h6 class="mb-3">Solde du Compte</h6>
+            <div class="row">
+                <div class="col-6">
+                    <div class="text-center">
+                        <div class="text-muted small">USDT Disponible</div>
+                        <div class="fw-semibold" id="usdtBalance">$0.00</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="text-center">
+                        <div class="text-muted small" id="assetBalanceLabel">BTC Disponible</div>
+                        <div class="fw-semibold" id="assetBalance">0.000</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Order Book and Price Chart -->
+    <div class="col-lg-4 mb-4">
+        <div class="trading-panel">
+            <h6 class="mb-3">Carnet d'Ordres</h6>
+            <div class="order-book" id="orderBook">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-book fa-2x mb-2"></i><br>
+                    Chargement du carnet d'ordres...
+                </div>
+            </div>
+        </div>
+        
+        <!-- Price Chart -->
+        <div class="trading-panel mt-3">
+            <h6 class="mb-3">Graphique de Prix</h6>
+            <div style="height: 300px;">
+                <canvas id="priceChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Positions and Orders -->
+    <div class="col-lg-4 mb-4">
+        <!-- Open Positions -->
+        <div class="trading-panel">
+            <h6 class="mb-3">Positions Ouvertes</h6>
+            <div id="openPositions">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+                    Aucune position ouverte
+                </div>
+            </div>
+        </div>
+        
+        <!-- Open Orders -->
+        <div class="trading-panel mt-3">
+            <h6 class="mb-3">Ordres Ouverts</h6>
+            <div id="openOrders">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-list fa-2x mb-2"></i><br>
+                    Aucun ordre ouvert
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Trades -->
+        <div class="trading-panel mt-3">
+            <h6 class="mb-3">Mes Trades Récents</h6>
+            <div style="max-height: 200px; overflow-y: auto;" id="recentTrades">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-history fa-2x mb-2"></i><br>
+                    Aucun trade récent
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Variables globales
+    let currentSymbol = 'BTCUSDT';
+    let priceChart = null;
+    let marketData = {};
+    let balances = { USDT: 0 };
+    
+    // Initialisation
+    document.addEventListener('DOMContentLoaded', function() {
+        initializePriceChart();
+        loadAccountBalance();
+        loadOpenPositions();
+        loadOpenOrders();
+        loadRecentTrades();
+        
+        // Event listeners pour les calculs automatiques
+        setupAutoCalculation();
+    });
+    
+    // Gestion des mises à jour temps réel
+    window.handleMarketDataUpdate = function(data) {
+        marketData = data;
+        updatePriceDisplay();
+        updateOrderBook();
+        updatePriceChart();
+        updateSymbolPrices(data);
+    };
+    
+    // Mise à jour des prix des symboles avec données réelles
+    function updateSymbolPrices(data) {
+        Object.keys(data).forEach(symbol => {
+            const symbolData = data[symbol];
+            if (symbolData && !symbolData.simulated) {
+                console.log(`Prix réel reçu pour ${symbol}: ${symbolData.price}`);
+            }
+        });
+        
+        // Mettre à jour les prix dans les formulaires si nécessaire
+        if (data[currentSymbol]) {
+            const symbolData = data[currentSymbol];
+            const buyOrderType = document.getElementById('buyOrderType').value;
+            const sellOrderType = document.getElementById('sellOrderType').value;
+            
+            // Mettre à jour les prix de marché
+            if (buyOrderType === 'MARKET') {
+                document.getElementById('buyPrice').value = symbolData.price.toFixed(8);
+                calculateTotal('buy');
+            }
+            if (sellOrderType === 'MARKET') {
+                document.getElementById('sellPrice').value = symbolData.price.toFixed(8);
+                calculateTotal('sell');
+            }
+        }
+    }
+    
+    // Initialiser les mises à jour temps réel au chargement
+    document.addEventListener('DOMContentLoaded', function() {
+        // ... code existant ...
+        
+        // Démarrer les mises à jour périodiques des prix réels
+        setInterval(async function() {
+            try {
+                const symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOTUSDT'];
+                const prices = await apiCall(`/api/market/prices?symbols=${symbols.join(',')}`);
+                
+                // Mettre à jour les données de marché avec les prix réels
+                Object.keys(prices).forEach(symbol => {
+                    if (!marketData[symbol]) marketData[symbol] = {};
+                    marketData[symbol].price = prices[symbol];
+                    marketData[symbol].timestamp = new Date().toISOString();
+                    marketData[symbol].real_price = true;
+                });
+                
+                updatePriceDisplay();
+                updatePriceChart();
+            } catch (error) {
+                console.error('Erreur lors de la mise à jour des prix réels:', error);
+            }
+        }, 5000); // Mise à jour toutes les 5 secondes
+    });
+    
+    // Changement de symbole
+    function changeSymbol() {
+        currentSymbol = document.getElementById('symbolSelect').value;
+        const baseAsset = currentSymbol.replace('USDT', '');
+        
+        // Mettre à jour les labels
+        document.getElementById('buySymbol').textContent = baseAsset;
+        document.getElementById('sellSymbol').textContent = baseAsset;
+        document.getElementById('assetBalanceLabel').textContent = baseAsset + ' Disponible';
+        
+        // Recharger les données
+        updatePriceDisplay();
+        loadAccountBalance();
+        loadOpenPositions();
+        loadOpenOrders();
+    }
+    
+    // Mise à jour de l'affichage du prix
+    function updatePriceDisplay() {
+        if (marketData[currentSymbol]) {
+            const data = marketData[currentSymbol];
+            document.getElementById('currentPrice').textContent = formatCurrency(data.price);
+            
+            const changeElement = document.getElementById('priceChange24h');
+            const change = data.change_24h || 0;
+            changeElement.textContent = formatPercentage(change);
+            changeElement.className = change >= 0 ? 'fw-semibold text-success' : 'fw-semibold text-danger';
+        }
+    }
+    
+    // Initialisation du graphique de prix
+    function initializePriceChart() {
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        
+        priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Prix',
+                    data: [],
+                    borderColor: 'rgb(37, 99, 235)',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.1,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toFixed(2);
+                            }
+                        }
+                    },
+                    x: {
+                        display: false
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
+    }
+    
+    // Mise à jour du graphique de prix
+    function updatePriceChart() {
+        if (marketData[currentSymbol] && priceChart) {
+            const data = marketData[currentSymbol];
+            const now = new Date().toLocaleTimeString();
+            
+            // Ajouter le nouveau point
+            priceChart.data.labels.push(now);
+            priceChart.data.datasets[0].data.push(data.price);
+            
+            // Garder seulement les 50 derniers points
+            if (priceChart.data.labels.length > 50) {
+                priceChart.data.labels.shift();
+                priceChart.data.datasets[0].data.shift();
+            }
+            
+            priceChart.update('none');
+        }
+    }
+    
+    // Mise à jour du carnet d'ordres
+    async function updateOrderBook() {
+        const orderBookElement = document.getElementById('orderBook');
+        if (!currentSymbol) {
+            orderBookElement.innerHTML = '<div class="text-center text-muted py-4">Sélectionnez un symbole.</div>';
+            return;
+        }
+
+        try {
+            const response = await apiCall(`/api/market/orderbook/${currentSymbol}`);
+            if (response.success === false || (!response.bids && !response.asks)) { // Check for explicit failure or empty data
+                console.error('Erreur lors de la récupération du carnet d\'ordres:', response.error || 'Pas de données bids/asks');
+                orderBookElement.innerHTML = `<div class="text-center text-muted py-4">Erreur carnet d'ordres: ${response.error || 'Données non disponibles'}</div>`;
+                return;
+            }
+
+            const bids = response.bids || [];
+            const asks = response.asks || [];
+            let html = '';
+
+            // Ordres de vente (asks) - prix plus élevés, affichés en premier (du plus bas au plus haut)
+            // L'API Binance retourne les asks triés par prix croissant, donc on les inverse pour l'affichage traditionnel
+            asks.slice().reverse().forEach(ask => {
+                html += `
+                    <div class="order-book-row order-book-sell">
+                        <span>${formatCurrency(parseFloat(ask[0]))}</span>
+                        <span>${formatNumber(parseFloat(ask[1]), 6)}</span>
+                    </div>
+                `;
+            });
+
+            // Prix actuel (peut être récupéré séparément ou estimé à partir du spread)
+            let currentMidPrice = marketData[currentSymbol] ? marketData[currentSymbol].price : 0;
+            if (bids.length > 0 && asks.length > 0) {
+                currentMidPrice = (parseFloat(bids[0][0]) + parseFloat(asks[0][0])) / 2;
+            } else if (bids.length > 0) {
+                currentMidPrice = parseFloat(bids[0][0]);
+            } else if (asks.length > 0) {
+                currentMidPrice = parseFloat(asks[0][0]);
+            }
+            
+            if (currentMidPrice > 0) {
+                 html += `
+                    <div class="order-book-row text-center fw-bold py-2" style="background-color: #f8f9fa;">
+                        <span class="text-primary">${formatCurrency(currentMidPrice)}</span>
+                    </div>
+                `;
+            }
+
+
+            // Ordres d'achat (bids) - prix plus bas (du plus haut au plus bas)
+            bids.forEach(bid => {
+                html += `
+                    <div class="order-book-row order-book-buy">
+                        <span>${formatCurrency(parseFloat(bid[0]))}</span>
+                        <span>${formatNumber(parseFloat(bid[1]), 6)}</span>
+                    </div>
+                `;
+            });
+            
+            if (!html) {
+                 orderBookElement.innerHTML = '<div class="text-center text-muted py-4">Carnet d\'ordres vide.</div>';
+            } else {
+                 orderBookElement.innerHTML = html;
+            }
+
+        } catch (error) {
+            console.error('Erreur lors de la mise à jour du carnet d\'ordres:', error);
+            orderBookElement.innerHTML = '<div class="text-center text-muted py-4">Impossible de charger le carnet d\'ordres.</div>';
+        }
+    }
+    
+    // Configuration du calcul automatique
+    function setupAutoCalculation() {
+        // Buy panel
+        const buyPrice = document.getElementById('buyPrice');
+        const buyQuantity = document.getElementById('buyQuantity');
+        const buyTotal = document.getElementById('buyTotal');
+        const buyOrderType = document.getElementById('buyOrderType');
+        
+        [buyPrice, buyQuantity].forEach(input => {
+            input.addEventListener('input', () => calculateTotal('buy'));
+        });
+        
+        buyOrderType.addEventListener('change', () => togglePriceField('buy'));
+        
+        // Sell panel
+        const sellPrice = document.getElementById('sellPrice');
+        const sellQuantity = document.getElementById('sellQuantity');
+        const sellTotal = document.getElementById('sellTotal');
+        const sellOrderType = document.getElementById('sellOrderType');
+        
+        [sellPrice, sellQuantity].forEach(input => {
+            input.addEventListener('input', () => calculateTotal('sell'));
+        });
+        
+        sellOrderType.addEventListener('change', () => togglePriceField('sell'));
+    }
+    
+    // Calcul du total
+    function calculateTotal(side) {
+        const price = parseFloat(document.getElementById(side + 'Price').value) || 0;
+        const quantity = parseFloat(document.getElementById(side + 'Quantity').value) || 0;
+        const total = price * quantity;
+        
+        document.getElementById(side + 'Total').value = total.toFixed(2);
+    }
+    
+    // Affichage/masquage du champ prix selon le type d'ordre
+    function togglePriceField(side) {
+        const orderType = document.getElementById(side + 'OrderType').value;
+        const priceGroup = document.getElementById(side + 'PriceGroup');
+        
+        if (orderType === 'MARKET') {
+            priceGroup.style.display = 'none';
+            // Utiliser le prix du marché
+            if (marketData[currentSymbol]) {
+                document.getElementById(side + 'Price').value = marketData[currentSymbol].price.toFixed(2);
+                calculateTotal(side);
+            }
+        } else {
+            priceGroup.style.display = 'block';
+        }
+    }
+    
+    // Définir la quantité par pourcentage
+    function setQuantityPercent(side, percent) {
+        const balance = side === 'buy' ? balances.USDT : balances[currentSymbol.replace('USDT', '')];
+        const price = parseFloat(document.getElementById(side + 'Price').value) || 
+                     (marketData[currentSymbol] ? marketData[currentSymbol].price : 0);
+        
+        let quantity = 0;
+        
+        if (side === 'buy' && balance && price) {
+            const totalUsdt = balance * (percent / 100);
+            quantity = totalUsdt / price;
+        } else if (side === 'sell' && balance) {
+            quantity = balance * (percent / 100);
+        }
+        
+        document.getElementById(side + 'Quantity').value = quantity.toFixed(6);
+        calculateTotal(side);
+    }
+    
+    // Placer un ordre
+    async function placeOrder(side) {
+        const orderTypeElement = document.getElementById(side.toLowerCase() + 'OrderType');
+        const priceElement = document.getElementById(side.toLowerCase() + 'Price');
+        const quantityElement = document.getElementById(side.toLowerCase() + 'Quantity');
+
+        const orderType = orderTypeElement.value;
+        const quantity = parseFloat(quantityElement.value);
+        let price = parseFloat(priceElement.value);
+
+        if (!quantity || quantity <= 0) {
+            showToast('Veuillez entrer une quantité valide.', 'warning');
+            return;
+        }
+
+        if (orderType !== 'MARKET' && (!price || price <= 0)) {
+            showToast('Veuillez entrer un prix valide pour un ordre Limite/Stop.', 'warning');
+            return;
+        }
+        
+        // Pour les ordres MARKET, le prix n'est pas nécessaire ou peut être le prix actuel pour info
+        if (orderType === 'MARKET') {
+            price = marketData[currentSymbol] ? marketData[currentSymbol].price : null;
+        }
+
+        const orderData = {
+            symbol: currentSymbol,
+            side: side,
+            order_type: orderType, // Assurez-vous que le backend attend 'order_type'
+            quantity: quantity,
+            price: orderType !== 'MARKET' ? price : null // Envoyez null ou ne pas envoyer le prix pour MARKET
+        };
+
+        try {
+            // Utiliser la fonction apiCall globale définie dans trading-interface.js ou base.html
+            // S'assurer que apiCall est disponible globalement ou via tradingInterface.apiCall
+            const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/trading/execute', 'POST', orderData) : apiCall('/api/trading/execute', 'POST', orderData));
+            
+            if (response.success) {
+                showToast(`Ordre ${side} ${orderData.symbol} @ ${orderData.price || 'Market'} soumis. Statut: ${response.trade ? response.trade.status || 'OK' : 'OK'}`, 'success');
+                // Réinitialiser le formulaire
+                quantityElement.value = '';
+                document.getElementById(side.toLowerCase() + 'Total').value = '';
+                if (orderType !== 'MARKET') {
+                    priceElement.value = '';
+                }
+                
+                // Recharger les données pertinentes
+                loadOpenOrders();
+                loadAccountBalance();
+                loadRecentTrades(); // Mettre à jour les trades récents
+                if (typeof tradingInterface !== 'undefined' && tradingInterface.refreshPortfolio) {
+                    tradingInterface.refreshPortfolio(); // Si la fonction existe dans la classe
+                } else {
+                    // Fallback si la fonction n'est pas directement accessible
+                    // ou appeler une fonction globale de mise à jour du portfolio si elle existe
+                }
+
+            } else {
+                showToast(`Échec de l'ordre: ${response.error || 'Erreur inconnue'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur lors du placement de l\'ordre:', error);
+            showToast('Erreur de communication lors du placement de l\'ordre.', 'error');
+        }
+    }
+    
+    // Chargement du solde du compte
+    async function loadAccountBalance() {
+        try {
+            const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/portfolio/balances') : apiCall('/api/portfolio/balances'));
+            if (response.success) {
+                // Déterminer si on utilise les soldes paper ou live en fonction du mode actuel du tradingInterface
+                // Si tradingInterface n'est pas défini ou n'a pas de currentMode, on utilise paper par défaut.
+                const currentTradingMode = (typeof tradingInterface !== 'undefined' && tradingInterface.currentMode) ? tradingInterface.currentMode : 'paper';
+                
+                balances = currentTradingMode === 'live' ? response.real_balances : response.paper_balances;
+                if (!balances) { // Fallback si le mode spécifique n'a pas de soldes
+                    balances = response.paper_balances || response.real_balances || { USDT: 0 };
+                }
+
+                document.getElementById('usdtBalance').textContent = formatCurrency(balances.USDT || 0);
+                
+                const baseAsset = currentSymbol.replace('USDT', ''); // Assure que currentSymbol est défini
+                const assetBalanceValue = balances[baseAsset] || 0;
+                document.getElementById('assetBalance').textContent = formatNumber(assetBalanceValue, 6);
+            } else {
+                console.error('Erreur lors de la récupération des soldes:', response.error);
+                // Afficher des soldes par défaut ou un message d'erreur
+                document.getElementById('usdtBalance').textContent = formatCurrency(0);
+                document.getElementById('assetBalance').textContent = formatNumber(0, 6);
+                balances = { USDT: 0 }; // Réinitialiser les soldes locaux
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement du solde:', error);
+            document.getElementById('usdtBalance').textContent = formatCurrency(0);
+            document.getElementById('assetBalance').textContent = formatNumber(0, 6);
+            balances = { USDT: 0 }; // Réinitialiser les soldes locaux en cas d'erreur
+        }
+    }
+    
+    // Chargement des positions ouvertes
+    async function loadOpenPositions() {
+        try {
+            const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/portfolio/positions') : apiCall('/api/portfolio/positions'));
+            const container = document.getElementById('openPositions');
+
+            if (response.success && response.positions && response.positions.length > 0) {
+                const positions = response.positions;
+                // Filtrer les positions pour le symbole actuel si nécessaire, ou afficher toutes les positions.
+                // Pour cette section, il est généralement préférable d'afficher toutes les positions ouvertes.
+                container.innerHTML = positions.map(position => {
+                    const pnl = parseFloat(position.pnl || 0);
+                    const pnlClass = pnl >= 0 ? 'position-profit' : 'position-loss';
+                    // Assumons que l'ID de la position est disponible, sinon utiliser le symbole ou un index.
+                    // L'API backend devrait fournir un ID unique pour chaque position.
+                    // Si `position.id` n'existe pas, il faudra adapter `closePosition`.
+                    const positionId = position.id || `${position.symbol}_${position.entry_price}`;
+
+                    return `
+                        <div class="position-card">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-semibold">${position.symbol} <span class="badge bg-${position.side.toLowerCase() === 'long' ? 'success' : 'danger'}">${position.side}</span></div>
+                                    <div class="small text-muted">Qty: ${formatNumber(position.quantity, 6)} @ ${formatCurrency(position.entry_price)}</div>
+                                    <div class="small text-muted">Actuel: ${formatCurrency(position.current_price || 0)}</div>
+                                </div>
+                                <div class="text-end">
+                                    <div class="fw-semibold ${pnlClass}">
+                                        ${formatCurrency(pnl)} (${formatPercentage(position.pnl_percent || 0)})
+                                    </div>
+                                    <div class="small text-muted">Marge: ${formatCurrency(position.margin_used || 0)}</div>
+                                    <button class="btn btn-sm btn-outline-danger mt-1" onclick="closePosition('${positionId}', '${position.symbol}', ${position.quantity}, '${position.side.toUpperCase()}')">
+                                        Fermer
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                 if (!response.success) {
+                    console.error('Erreur API lors du chargement des positions:', response.error);
+                }
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-chart-line fa-2x mb-2"></i><br>
+                        Aucune position ouverte
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des positions:', error);
+            document.getElementById('openPositions').innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2 text-danger"></i><br>
+                    Erreur de chargement des positions.
+                </div>
+            `;
+        }
+    }
+    
+    // Chargement des ordres ouverts
+    async function loadOpenOrders() {
+        try {
+            // Supposons un endpoint /api/trading/orders?status=open ou similaire
+            // Pour l'instant, on va utiliser un endpoint fictif /api/trading/orders/open
+            // Ce endpoint devra être créé dans app_enhanced.py
+            const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/trading/orders/open') : apiCall('/api/trading/orders/open'));
+            const container = document.getElementById('openOrders');
+
+            if (response.success && response.orders && response.orders.length > 0) {
+                const orders = response.orders;
+                 // Filtrer pour le symbole actuel si nécessaire, ou afficher tous les ordres ouverts.
+                container.innerHTML = orders.map(order => {
+                    // Assumons que l'API retourne des ordres avec id, symbol, side, quantity, price, type
+                    const orderId = order.order_id || `${order.symbol}_${order.timestamp}`; // Utiliser order_id si disponible
+                    return `
+                        <div class="position-card">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-semibold">${order.symbol} <span class="badge bg-info">${order.type || 'N/A'}</span></div>
+                                    <div class="small text-muted">${order.side} ${formatNumber(order.quantity, 6)} @ ${formatCurrency(order.price)}</div>
+                                    <div class="small text-muted">Statut: ${order.status || 'Ouvert'}</div>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="cancelOrder('${orderId}')">
+                                        Annuler
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                if (!response.success) {
+                    console.error('Erreur API lors du chargement des ordres ouverts:', response.error);
+                }
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-list fa-2x mb-2"></i><br>
+                        Aucun ordre ouvert
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des ordres ouverts:', error);
+             document.getElementById('openOrders').innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2 text-danger"></i><br>
+                    Erreur de chargement des ordres.
+                </div>
+            `;
+        }
+    }
+    
+    // Chargement des trades récents
+    async function loadRecentTrades() {
+        try {
+            const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/trades/recent') : apiCall('/api/trades/recent'));
+            const container = document.getElementById('recentTrades');
+            
+            // L'API /api/trades/recent retourne directement un tableau de trades.
+            // Elle ne retourne pas un objet avec une clé 'success' ou 'trades'.
+            if (response && Array.isArray(response) && response.length > 0) {
+                container.innerHTML = response.slice(0, 10).map(trade => { // Afficher les 10 derniers trades
+                    const sideClass = trade.side && trade.side.toUpperCase() === 'BUY' ? 'text-success' : 'text-danger';
+                    const pnlValue = parseFloat(trade.pnl || 0);
+                    const pnlClass = pnlValue >= 0 ? 'text-success' : 'text-danger';
+                    
+                    return `
+                        <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                            <div>
+                                <div class="fw-semibold">${trade.symbol}</div>
+                                <div class="small ${sideClass}">${trade.side} ${formatNumber(trade.quantity, 6)}</div>
+                                <div class="small text-muted">Prix: ${formatCurrency(trade.price)}</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="${pnlClass} fw-semibold">${formatCurrency(pnlValue)}</div>
+                                <div class="small text-muted">${trade.model_used || 'Manuel'}</div>
+                                <div class="small text-muted">${new Date(trade.timestamp).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                 if (response && Array.isArray(response) && response.length === 0) {
+                    // Pas de trades, c'est une réponse valide mais vide
+                } else {
+                    console.error('Erreur API lors du chargement des trades récents: Réponse vide, invalide ou non-tableau.');
+                }
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-history fa-2x mb-2"></i><br>
+                        Aucun trade récent
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des trades récents:', error);
+            document.getElementById('recentTrades').innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2 text-danger"></i><br>
+                    Erreur de chargement des trades.
+                </div>
+            `;
+        }
+    }
+    
+    // Fermer une position
+    async function closePosition(positionId, symbol, quantity, side) {
+        if (confirm(`Êtes-vous sûr de vouloir fermer la position ${side} ${quantity} ${symbol} ?`)) {
+            try {
+                // Pour fermer une position, on exécute un ordre inverse.
+                // Le backend pourrait avoir un endpoint spécifique /api/trading/positions/close
+                // ou on peut utiliser /api/trading/execute avec le côté opposé.
+                // Ici, nous utilisons /api/trading/execute.
+                const oppositeSide = side === 'BUY' ? 'SELL' : 'BUY';
+                const orderData = {
+                    symbol: symbol,
+                    side: oppositeSide,
+                    order_type: 'MARKET', // Fermer au prix du marché
+                    quantity: quantity,
+                    // price: null // Non nécessaire pour MARKET
+                    // 'position_id': positionId // Optionnel, si le backend le gère
+                };
+
+                const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/trading/execute', 'POST', orderData) : apiCall('/api/trading/execute', 'POST', orderData));
+
+                if (response.success) {
+                    showToast(`Position ${symbol} en cours de fermeture.`, 'success');
+                    loadOpenPositions();
+                    loadAccountBalance();
+                    loadRecentTrades();
+                } else {
+                    showToast(`Échec de la fermeture de la position: ${response.error || 'Erreur inconnue'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Erreur lors de la fermeture de la position:', error);
+                showToast('Erreur de communication lors de la fermeture de la position.', 'error');
+            }
+        }
+    }
+    
+    // Annuler un ordre
+    async function cancelOrder(orderId) {
+        if (confirm(`Êtes-vous sûr de vouloir annuler l'ordre ${orderId} ?`)) {
+            try {
+                // Supposons un endpoint /api/trading/orders/cancel/<order_id> ou similaire
+                // Pour l'instant, on va utiliser un endpoint fictif /api/trading/orders/cancel
+                // Ce endpoint devra être créé dans app_enhanced.py et accepter l'ID de l'ordre.
+                const response = await (typeof tradingInterface !== 'undefined' ? tradingInterface.apiCall('/api/trading/orders/cancel', 'POST', { order_id: orderId }) : apiCall('/api/trading/orders/cancel', 'POST', { order_id: orderId }));
+
+                if (response.success) {
+                    showToast(`Ordre ${orderId} annulé avec succès.`, 'success');
+                    loadOpenOrders();
+                } else {
+                    showToast(`Échec de l'annulation de l'ordre: ${response.error || 'Erreur inconnue'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Erreur lors de l\'annulation de l\'ordre:', error.message || error);
+                showToast('Erreur de communication lors de l\'annulation de l\'ordre.', 'error');
+            }
+        }
+    }
+</script>
+{% endblock %}

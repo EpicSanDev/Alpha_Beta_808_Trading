@@ -11,6 +11,69 @@ except ImportError:
     Client = None
     BINANCE_AVAILABLE = False
 
+class BinanceConnector:
+    """
+    Connecteur pour interagir avec l'API Binance.
+    """
+    def __init__(self, api_key: str, api_secret: str, testnet: bool = False):
+        """
+        Initialise le connecteur Binance.
+
+        Args:
+            api_key (str): Clé API Binance.
+            api_secret (str): Clé secrète API Binance.
+            testnet (bool): True pour utiliser l'environnement de test Binance, False sinon.
+        """
+        if not BINANCE_AVAILABLE:
+            raise ImportError("La librairie python-binance n'est pas installée. Veuillez l'installer avec 'pip install python-binance'.")
+        self.client = Client(api_key, api_secret, testnet=testnet)
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.testnet = testnet
+
+    def get_klines(self, symbol: str, intervals: List[str], start_date_str: str, end_date_str: Optional[str] = None) -> Dict[str, pd.DataFrame]:
+        """
+        Charge les données de klines historiques depuis Binance pour plusieurs intervalles.
+
+        Args:
+            symbol (str): La paire de trading (ex: 'BTCUSDT').
+            intervals (List[str]): Liste des intervalles de klines (ex: ['1d', '4h', '30m']).
+            start_date_str (str): Date de début pour l'historique (format 'YYYY-MM-DD' ou 'X days/months/years ago').
+            end_date_str (Optional[str]): Date de fin pour l'historique (format 'YYYY-MM-DD').
+                                          Si None, utilise la date actuelle.
+
+        Returns:
+            Dict[str, pd.DataFrame]: Un dictionnaire où les clés sont les intervalles et
+                                     les valeurs sont les DataFrames correspondants.
+        """
+        return load_binance_klines(
+            api_key=self.api_key,
+            api_secret=self.api_secret,
+            symbol=symbol,
+            intervals=intervals,
+            start_date_str=start_date_str,
+            end_date_str=end_date_str,
+            testnet=self.testnet
+        )
+
+    def get_balance(self, specific_assets: Optional[List[str]] = None) -> Dict[str, float]:
+        """
+        Récupère les soldes des actifs spécifiés depuis Binance.
+
+        Args:
+            specific_assets (Optional[List[str]]): Une liste d'actifs à récupérer (ex: ['USDC', 'USDT']).
+                                                 Si None, tente de récupérer les stablecoins communs.
+
+        Returns:
+            Dict[str, float]: Un dictionnaire avec les actifs comme clés et leurs soldes libres comme valeurs.
+        """
+        return get_binance_balance(
+            api_key=self.api_key,
+            api_secret=self.api_secret,
+            specific_assets=specific_assets,
+            testnet=self.testnet
+        )
+
 def load_csv_data(
     file_path: str,
     columns: Optional[List[str]] = None,

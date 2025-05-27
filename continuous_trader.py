@@ -838,8 +838,8 @@ class ContinuousTrader:
                 )
                 
                 # Placer l'ordre
-                success = await self.trader.place_order(order) # place_order devrait retourner l'ID de l'ordre ou une confirmation
-                if success: # Supposons que success signifie que l'ordre a été accepté par l'API
+                success = await self.trader.place_order_async(order) # place_order_async retourne un booléen
+                if success: # success signifie que l'ordre a été accepté par l'API (ou simulé avec succès)
                     logger.info(f"🟢 Ordre d'achat soumis: {symbol} - {quantity:.6f} @ market (ref price {price:.4f})")
                     # Les stats de trades exécutés/réussis seront mises à jour dans _on_order_update
                 else:
@@ -875,7 +875,7 @@ class ContinuousTrader:
                 )
                 
                 # Placer l'ordre
-                success = await self.trader.place_order(order)
+                success = await self.trader.place_order_async(order)
                 if success:
                     logger.info(f"🔴 Ordre de vente soumis: {symbol} - {quantity:.6f} @ market (ref price {price:.4f})")
                 else:
@@ -1218,7 +1218,7 @@ Dernier Health Check: {self.stats['last_health_check']}
                             quantity=quantity_to_sell,
                             client_order_id=f"risk_reduce_{symbol_held}_{int(time.time())}"
                         )
-                        await self.trader.place_order(order)
+                        await self.trader.place_order_async(order)
                         # La mise à jour de self.stats['open_positions'] se fera via _on_order_update
                     else:
                         logger.info(f"Quantité calculée pour réduction de {symbol_held} est nulle ou négative.")

@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+
+{% block title %}Gestion des Risques - AlphaBeta808 Trading{% endblock %}
+{% block page_title %}Gestion des Risques{% endblock %}
+
+{% block extra_css %}
+<style>
+    .risk-card {
+        background: white;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        margin-bottom: 1.5rem;
+    }
+    
+    .risk-metric {
+        text-align: center;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    
+    .risk-low {
+        background: rgba(var(--success-rgb), 0.1);
+        border: 1px solid var(--success-color);
+    }
+    
+    .risk-medium {
+        background: rgba(var(--warning-rgb), 0.1);
+        border: 1px solid var(--warning-color);
+    }
+    
+    .risk-high {
+        background: rgba(var(--danger-rgb), 0.1);
+        border: 1px solid var(--danger-color);
+    }
+    
+    .position-calculator {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        color: white;
+        border-radius: 1rem;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    .gauge-container {
+        position: relative;
+        width: 200px;
+        height: 100px;
+        margin: 0 auto;
+    }
+    
+    .gauge {
+        width: 200px;
+        height: 100px;
+    }
+    
+    .settings-section {
+        background: rgba(var(--light-rgb), 0.5);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .exposure-bar {
+        height: 20px;
+        border-radius: 10px;
+        background: var(--light-color);
+        overflow: hidden;
+        position: relative;
+    }
+    
+    .exposure-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+        border-radius: 10px;
+    }
+    
+    .exposure-safe {
+        background: var(--success-color);
+    }
+    
+    .exposure-warning {
+        background: var(--warning-color);
+    }
+    
+    .exposure-danger {
+        background: var(--danger-color);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Risk Overview Dashboard -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="position-calculator">
+            <h4 class="text-center mb-4">Calculateur de Position</h4>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label text-white">Symbole</label>
+                        <select class="form-select" id="calcSymbol">
+                            <option value="">Sélectionner un symbole</option>
+                            <option value="BTCUSDT">BTC/USDT</option>
+                            <option value="ETHUSDT">ETH/USDT</option>
+                            <option value="ADAUSDT">ADA/USDT</option>
+                            <option value="DOTUSDT">DOT/USDT</option>
+                            <option value="SOLUSDT">SOL/USDT</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-white">Prix d'Entrée ($)</label>
+                        <input type="number" class="form-control" id="calcEntryPrice" step="0.00001">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-white">Stop Loss ($)</label>
+                        <input type="number" class="form-control" id="calcStopLoss" step="0.00001">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label text-white">Risque par Trade (%)</label>
+                        <input type="number" class="form-control" id="calcRiskPercent" value="2" step="0.1" min="0.1" max="10">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-white">Capital Disponible ($)</label>
+                        <input type="number" class="form-control" id="calcCapital" readonly>
+                    </div>
+                    <div class="text-center mt-4">
+                        <button class="btn btn-light btn-lg" onclick="calculatePosition()">
+                            <i class="fas fa-calculator me-2"></i>
+                            Calculer
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results -->
+            <div id="calculationResults" class="mt-4" style="display: none;">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h5 class="text-white-50">Taille Position</h5>
+                        <h3 id="positionSize">-</h3>
+                    </div>
+                    <div class="col-md-3">
+                        <h5 class="text-white-50">Montant ($)</h5>
+                        <h3 id="positionAmount">-</h3>
+                    </div>
+                    <div class="col-md-3">
+                        <h5 class="text-white-50">Risque ($)</h5>
+                        <h3 id="riskAmount">-</h3>
+                    </div>
+                    <div class="col-md-3">
+                        <h5 class="text-white-50">R:R Ratio</h5>
+                        <h3 id="rrRatio">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Metrics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="risk-metric risk-low" id="portfolioRiskCard">
+            <h6 class="text-muted mb-2">Risque Portfolio</h6>
+            <h3 class="mb-1" id="portfolioRisk">2.5%</h3>
+            <small class="text-muted">sur capital total</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="risk-metric risk-medium" id="exposureRiskCard">
+            <h6 class="text-muted mb-2">Exposition</h6>
+            <h3 class="mb-1" id="currentExposure">45%</h3>
+            <small class="text-muted">du capital</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="risk-metric risk-low" id="diversificationCard">
+            <h6 class="text-muted mb-2">Diversification</h6>
+            <h3 class="mb-1" id="diversificationScore">8/10</h3>
+            <small class="text-muted">score</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="risk-metric risk-medium" id="volatilityCard">
+            <h6 class="text-muted mb-2">Volatilité</h6>
+            <h3 class="mb-1" id="portfolioVolatility">15.2%</h3>
+            <small class="text-muted">sur 30j</small>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Risk Settings -->
+    <div class="col-md-6 mb-4">
+        <div class="risk-card">
+            <h5 class="mb-4">
+                <i class="fas fa-cog me-2"></i>
+                Paramètres de Risque
+            </h5>
+            
+            <div class="settings-section">
+                <h6>Limites de Position</h6>
+                <div class="mb-3">
+                    <label class="form-label">Risque maximum par trade (%)</label>
+                    <input type="range" class="form-range" id="maxRiskPerTrade" min="0.5" max="10" step="0.1" value="2">
+                    <div class="d-flex justify-content-between">
+                        <span>0.5%</span>
+                        <span id="maxRiskValue">2.0%</span>
+                        <span>10%</span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Exposition maximum du portfolio (%)</label>
+                    <input type="range" class="form-range" id="maxExposure" min="10" max="100" step="5" value="50">
+                    <div class="d-flex justify-content-between">
+                        <span>10%</span>
+                        <span id="maxExposureValue">50%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="settings-section">
+                <h6>Stop Loss Automatique</h6>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="autoStopLoss" checked>
+                    <label class="form-check-label" for="autoStopLoss">
+                        Activer les stop loss automatiques
+                    </label>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Stop loss par défaut (%)</label>
+                    <input type="number" class="form-control" id="defaultStopLoss" value="3" step="0.1" min="0.5" max="20">
+                </div>
+            </div>
+            
+            <div class="settings-section">
+                <h6>Gestion des Corrélations</h6>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="correlationControl" checked>
+                    <label class="form-check-label" for="correlationControl">
+                        Limiter les positions corrélées
+                    </label>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Corrélation maximum autorisée</label>
+                    <input type="range" class="form-range" id="maxCorrelation" min="0.3" max="0.9" step="0.1" value="0.7">
+                    <div class="d-flex justify-content-between">
+                        <span>30%</span>
+                        <span id="maxCorrelationValue">70%</span>
+                        <span>90%</span>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary w-100" onclick="saveRiskSettings()">
+                <i class="fas fa-save me-2"></i>
+                Sauvegarder les Paramètres
+            </button>
+        </div>
+    </div>
+    
+    <!-- Current Positions Risk Analysis -->
+    <div class="col-md-6 mb-4">
+        <div class="risk-card">
+            <h5 class="mb-4">
+                <i class="fas fa-shield-alt me-2"></i>
+                Analyse des Positions
+            </h5>
+            
+            <div class="mb-4">
+                <h6>Exposition par Asset</h6>
+                <div id="assetExposure">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-2"></i><br>
+                        Chargement de l'analyse...
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <h6>Distribution des Risques</h6>
+                <canvas id="riskChart" style="max-height: 300px;"></canvas>
+            </div>
+            
+            <div class="mb-4">
+                <h6>Métriques de Risque</h6>
+                <div id="riskMetrics">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Value at Risk (VaR 95%):</span>
+                        <span class="fw-bold" id="var95">-</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Expected Shortfall:</span>
+                        <span class="fw-bold" id="expectedShortfall">-</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Sharpe Ratio:</span>
+                        <span class="fw-bold" id="sharpeRatio">-</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Maximum Drawdown:</span>
+                        <span class="fw-bold" id="maxDrawdown">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Alerts -->
+<div class="row">
+    <div class="col-12">
+        <div class="risk-card">
+            <h5 class="mb-3">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Alertes de Risque
+            </h5>
+            <div id="riskAlerts">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-shield-check fa-2x mb-2"></i><br>
+                    Aucune alerte de risque active
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    let riskChart;
+    
+    // Initialize risk management page
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeRiskChart();
+        loadRiskMetrics();
+        loadAssetExposure();
+        loadCapitalAmount();
+        setupRangeInputs();
+        
+        // Auto-refresh every 60 seconds
+        setInterval(() => {
+            loadRiskMetrics();
+            loadAssetExposure();
+        }, 60000);
+    });
+    
+    // Setup range inputs with live value updates
+    function setupRangeInputs() {
+        document.getElementById('maxRiskPerTrade').addEventListener('input', function() {
+            document.getElementById('maxRiskValue').textContent = this.value + '%';
+        });
+        
+        document.getElementById('maxExposure').addEventListener('input', function() {
+            document.getElementById('maxExposureValue').textContent = this.value + '%';
+        });
+        
+        document.getElementById('maxCorrelation').addEventListener('input', function() {
+            document.getElementById('maxCorrelationValue').textContent = Math.round(this.value * 100) + '%';
+        });
+    }
+    
+    // Initialize risk distribution chart
+    function initializeRiskChart() {
+        const ctx = document.getElementById('riskChart').getContext('2d');
+        riskChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['BTC', 'ETH', 'Autres', 'Cash'],
+                datasets: [{
+                    data: [40, 30, 20, 10],
+                    backgroundColor: [
+                        'rgba(255, 159, 64, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(153, 102, 255, 0.8)',
+                        'rgba(201, 203, 207, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 159, 64, 1)',
+                        'rgba(54, 162, 235, 1)',
+                        'rgba(153, 102, 255, 1)',
+                        'rgba(201, 203, 207, 1)'
+                    ],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': ' + context.parsed + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    // Load available capital
+    async function loadCapitalAmount() {
+        try {
+            const response = await apiCall('/api/portfolio/balances'); // Retourne {success, paper_balances, real_balances, current_balances}
+            if (response.success) {
+                // Utiliser current_balances qui reflète le mode de trading actif
+                const currentBalances = response.current_balances || {};
+                const usdtAmount = parseFloat(currentBalances.USDT || 0);
+                document.getElementById('calcCapital').value = usdtAmount.toFixed(2);
+            } else {
+                console.error("Erreur API /api/portfolio/balances pour le capital:", response.error);
+                document.getElementById('calcCapital').value = '0.00';
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement du capital:', error);
+            document.getElementById('calcCapital').value = '0.00';
+        }
+    }
+    
+    // Calculate position size
+    function calculatePosition() {
+        const symbol = document.getElementById('calcSymbol').value;
+        const entryPrice = parseFloat(document.getElementById('calcEntryPrice').value);
+        const stopLoss = parseFloat(document.getElementById('calcStopLoss').value);
+        const riskPercent = parseFloat(document.getElementById('calcRiskPercent').value);
+        const capital = parseFloat(document.getElementById('calcCapital').value);
+        
+        if (!symbol || !entryPrice || !stopLoss || !riskPercent || !capital) {
+            alert('Veuillez remplir tous les champs');
+            return;
+        }
+        
+        if (stopLoss >= entryPrice) {
+            alert('Le stop loss doit être inférieur au prix d\'entrée');
+            return;
+        }
+        
+        // Calculate position size
+        const riskAmount = capital * (riskPercent / 100);
+        const stopLossDistance = entryPrice - stopLoss;
+        const positionSize = riskAmount / stopLossDistance;
+        const positionAmount = positionSize * entryPrice;
+        
+        // Calculate R:R ratio (assuming 2:1 target)
+        const targetPrice = entryPrice + (stopLossDistance * 2);
+        const rrRatio = (targetPrice - entryPrice) / stopLossDistance;
+        
+        // Display results
+        document.getElementById('positionSize').textContent = positionSize.toFixed(8);
+        document.getElementById('positionAmount').textContent = formatCurrency(positionAmount);
+        document.getElementById('riskAmount').textContent = formatCurrency(riskAmount);
+        document.getElementById('rrRatio').textContent = rrRatio.toFixed(2) + ':1';
+        
+        document.getElementById('calculationResults').style.display = 'block';
+    }
+    
+    // Load risk metrics
+    async function loadRiskMetrics() {
+        try {
+            const response = await apiCall('/api/risk/metrics'); // Cet endpoint retourne {success, portfolio_value, total_exposure, exposure_percent, var_95_placeholder, max_drawdown, open_positions, daily_pnl_global, risk_level}
+            if (response.success) {
+                const metrics = response; // La réponse contient directement les métriques
+                
+                // Update risk cards - Adapter aux clés réellement retournées par l'API
+                document.getElementById('portfolioRisk').textContent = (metrics.exposure_percent || 0).toFixed(1) + '%'; // Utiliser exposure_percent comme indicateur de risque portfolio
+                document.getElementById('currentExposure').textContent = (metrics.exposure_percent || 0).toFixed(1) + '%';
+                // 'diversificationScore' et 'portfolioVolatility' ne sont pas directement fournis par /api/risk/metrics
+                // Ils pourraient nécessiter des calculs supplémentaires ou être des placeholders.
+                // Pour l'instant, laissons-les tels quels ou mettons des placeholders.
+                document.getElementById('diversificationScore').textContent = metrics.diversification_score !== undefined ? Math.round(metrics.diversification_score) + '/10' : 'N/A';
+                document.getElementById('portfolioVolatility').textContent = metrics.portfolio_volatility !== undefined ? (metrics.portfolio_volatility).toFixed(1) + '%' : 'N/A';
+                
+                // Update risk metrics table
+                document.getElementById('var95').textContent = formatCurrency(metrics.var_95_placeholder || 0); // C'est un placeholder
+                // 'expectedShortfall' et 'sharpeRatio' ne sont pas directement fournis par /api/risk/metrics
+                document.getElementById('expectedShortfall').textContent = metrics.expected_shortfall !== undefined ? formatCurrency(metrics.expected_shortfall) : 'N/A';
+                document.getElementById('sharpeRatio').textContent = metrics.sharpe_ratio !== undefined ? (metrics.sharpe_ratio).toFixed(2) : 'N/A';
+                document.getElementById('maxDrawdown').textContent = (metrics.max_drawdown || 0).toFixed(1) + '%';
+                
+                // Update card colors based on risk levels
+                // La fonction updateRiskCardColors devra être adaptée si les noms des métriques changent
+                updateRiskCardColors({
+                    portfolio_risk: metrics.exposure_percent, // Utiliser exposure_percent pour la couleur de la carte portfolioRisk
+                    exposure: metrics.exposure_percent,
+                    volatility: metrics.portfolio_volatility // Assurez-vous que cette clé existe ou adaptez
+                });
+            } else {
+                console.error("Erreur API /api/risk/metrics:", response.error);
+                // Mettre des valeurs par défaut ou des messages d'erreur dans l'UI
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement des métriques de risque:', error);
+        }
+    }
+    
+    // Update risk card colors based on levels
+    function updateRiskCardColors(metrics) {
+        const portfolioRiskCard = document.getElementById('portfolioRiskCard');
+        const exposureCard = document.getElementById('exposureRiskCard');
+        const volatilityCard = document.getElementById('volatilityCard');
+        
+        // Portfolio risk coloring
+        portfolioRiskCard.className = 'risk-metric ' + 
+            (metrics.portfolio_risk < 3 ? 'risk-low' : 
+             metrics.portfolio_risk < 7 ? 'risk-medium' : 'risk-high');
+        
+        // Exposure coloring
+        exposureCard.className = 'risk-metric ' + 
+            (metrics.exposure < 50 ? 'risk-low' : 
+             metrics.exposure < 80 ? 'risk-medium' : 'risk-high');
+        
+        // Volatility coloring
+        volatilityCard.className = 'risk-metric ' + 
+            (metrics.volatility < 15 ? 'risk-low' : 
+             metrics.volatility < 25 ? 'risk-medium' : 'risk-high');
+    }
+    
+    // Load asset exposure analysis
+    async function loadAssetExposure() {
+        try {
+            const response = await apiCall('/api/portfolio/positions'); // Retourne {success, positions}
+            const assetExposureElement = document.getElementById('assetExposure'); // Renommé pour clarté
+
+            if (response.success && response.positions) {
+                const positions = response.positions;
+                
+                if (positions.length === 0) {
+                    assetExposureElement.innerHTML = `
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-chart-pie fa-2x mb-2"></i><br>
+                            Aucune position active pour l'analyse d'exposition.
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Calculer la valeur totale des positions pour le pourcentage d'exposition
+                // Chaque position devrait avoir 'entry_price' et 'quantity'. 'current_price' est aussi utile.
+                // La 'valeur' d'une position est current_price * quantity.
+                const totalPortfolioValue = positions.reduce((sum, pos) => {
+                    const value = (parseFloat(pos.current_price || pos.entry_price || 0) * parseFloat(pos.quantity || 0));
+                    return sum + value;
+                }, 0);
+                
+                // Grouper par actif de base
+                const assetGroups = {};
+                positions.forEach(pos => {
+                    const baseAsset = pos.symbol.replace('USDT', ''); // Supposer que toutes les paires sont contre USDT
+                    if (!assetGroups[baseAsset]) {
+                        assetGroups[baseAsset] = { value: 0, count: 0 }; // 'count' au lieu de 'positions'
+                    }
+                    const positionValue = (parseFloat(pos.current_price || pos.entry_price || 0) * parseFloat(pos.quantity || 0));
+                    assetGroups[baseAsset].value += positionValue;
+                    assetGroups[baseAsset].count += 1;
+                });
+                
+                // Afficher les barres d'exposition
+                assetExposureElement.innerHTML = Object.entries(assetGroups).map(([asset, data]) => {
+                    const percentage = totalPortfolioValue > 0 ? (data.value / totalPortfolioValue) * 100 : 0;
+                    const exposureClass = percentage > 50 ? 'exposure-danger' :
+                                         percentage > 30 ? 'exposure-warning' : 'exposure-safe';
+                    
+                    return `
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="fw-bold">${asset}</span>
+                                <span>${percentage.toFixed(1)}%</span>
+                            </div>
+                            <div class="exposure-bar">
+                                <div class="exposure-fill ${exposureClass}" style="width: ${percentage.toFixed(1)}%"></div>
+                            </div>
+                            <small class="text-muted">${data.count} position(s) • ${formatCurrency(data.value)}</small>
+                        </div>
+                    `;
+                }).join('');
+
+                // Mettre à jour le graphique de distribution des risques (doughnut)
+                if (riskChart) {
+                    riskChart.data.labels = Object.keys(assetGroups);
+                    riskChart.data.datasets[0].data = Object.values(assetGroups).map(group => group.value);
+                    // Ajouter le cash si disponible et pertinent pour ce graphique
+                    // const capitalResponse = await apiCall('/api/portfolio/balances');
+                    // if (capitalResponse.success && capitalResponse.current_balances && capitalResponse.current_balances.USDT) {
+                    //     riskChart.data.labels.push('Cash (USDT)');
+                    //     riskChart.data.datasets[0].data.push(parseFloat(capitalResponse.current_balances.USDT));
+                    // }
+                    riskChart.update();
+                }
+
+            } else {
+                 console.error("Erreur API /api/portfolio/positions pour l'exposition:", response.error);
+                 assetExposureElement.innerHTML = `
+                    <div class="text-center text-danger py-4">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                        Erreur de chargement de l'exposition: ${response.error || ''}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Erreur lors du chargement de l\'exposition par actif:', error);
+             document.getElementById('assetExposure').innerHTML = `
+                <div class="text-center text-danger py-4">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i><br>
+                    Erreur de communication pour l'exposition.
+                </div>
+            `;
+        }
+    }
+    
+    // Save risk settings
+    async function saveRiskSettings() {
+        const settings = {
+            max_risk_per_trade: parseFloat(document.getElementById('maxRiskPerTrade').value),
+            max_exposure: parseFloat(document.getElementById('maxExposure').value),
+            auto_stop_loss: document.getElementById('autoStopLoss').checked,
+            default_stop_loss: parseFloat(document.getElementById('defaultStopLoss').value),
+            correlation_control: document.getElementById('correlationControl').checked,
+            max_correlation: parseFloat(document.getElementById('maxCorrelation').value)
+        };
+        
+        try {
+            const response = await apiCall('/api/risk/settings', 'POST', settings);
+            if (response.success) {
+                showToast('Paramètres de risque sauvegardés', 'success');
+            }
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde:', error);
+            showToast('Erreur lors de la sauvegarde', 'error');
+        }
+    }
+    
+    // Utility functions
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount);
+    }
+    
+    async function apiCall(endpoint, method = 'GET', data = null) {
+        const options = {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        };
+        
+        if (data) {
+            options.body = JSON.stringify(data);
+        }
+        
+        const response = await fetch(endpoint, options);
+        return await response.json();
+    }
+    
+    function showToast(message, type) {
+        // Implementation would depend on your toast notification system
+        console.log(`${type.toUpperCase()}: ${message}`);
+    }
+</script>
+{% endblock %}

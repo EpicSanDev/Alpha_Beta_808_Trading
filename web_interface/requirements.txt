@@ -1,0 +1,58 @@
+# Web Interface Requirements for AlphaBeta808 Trading Bot
+# Core Flask and Web Framework
+Flask==2.3.3
+Flask-SocketIO==5.3.6
+Flask-Login==0.6.3
+Flask-WTF==1.1.1
+Flask-CORS==4.0.0
+Werkzeug==2.3.7
+
+# Password Hashing
+bcrypt==4.0.1
+
+# WebSocket Support
+python-socketio==5.8.0
+python-engineio==4.7.1
+eventlet==0.33.3
+
+# HTTP and API
+requests==2.31.0
+urllib3==2.0.4
+
+# Data Processing and Analysis
+pandas==2.1.1
+numpy>=1.22.4,<1.27.0
+scipy==1.11.3
+
+# Machine Learning
+scikit-learn==1.3.0
+xgboost==1.7.6
+joblib>=1.1.0 # Pour la sauvegarde/chargement de modèles scikit-learn
+optuna>=2.10.0 # Pour l'optimisation des hyperparamètres
+
+# Trading and Financial Data
+# ccxt==4.0.77 # Décommenter si d'autres connecteurs que python-binance sont utilisés
+python-binance>=1.0.17 # Nécessaire pour BinanceRealTimeTrader et BinanceConnector
+
+# Technical Analysis
+ta==0.10.2
+
+# Configuration and Environment
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Time and Date Handling
+pytz==2023.3
+
+# File Processing
+reportlab==4.0.4  # PDF generation
+jinja2==3.1.2  # Template engine
+
+# Development and Testing
+pytest==7.4.2
+pytest-flask==1.2.0
+
+# Additional Utilities
+click==8.1.7
+itsdangerous==2.1.2
+MarkupSafe==2.1.3

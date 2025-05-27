@@ -1,0 +1,654 @@
+{% extends "base.html" %}
+
+{% block title %}Optimization - AlphaBeta808{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 text-gradient">Model Optimization</h1>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-primary" onclick="startOptimization()">
+                        <i class="fas fa-play"></i> Start Optimization
+                    </button>
+                    <button type="button" class="btn btn-warning" onclick="pauseOptimization()">
+                        <i class="fas fa-pause"></i> Pause
+                    </button>
+                    <button type="button" class="btn btn-danger" onclick="stopOptimization()">
+                        <i class="fas fa-stop"></i> Stop
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optimization Status -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Optimization Status</h5>
+                    <span id="optimization-status" class="badge bg-secondary">Idle</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Current Iteration</label>
+                                <div class="progress">
+                                    <div id="iteration-progress" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                         role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                        <span id="iteration-text">0 / 0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Overall Progress</label>
+                                <div class="progress">
+                                    <div id="overall-progress" class="progress-bar bg-success" 
+                                         role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                        <span id="overall-text">0%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <small class="text-muted">Elapsed Time: <span id="elapsed-time">00:00:00</span></small>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted">Estimated Remaining: <span id="remaining-time">--:--:--</span></small>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted">Best Score: <span id="best-score">--</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optimization Configuration -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Optimization Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <form id="optimization-form">
+                        <div class="mb-3">
+                            <label for="optimization-method" class="form-label">Optimization Method</label>
+                            <select class="form-select" id="optimization-method">
+                                <option value="bayesian">Bayesian Optimization</option>
+                                <option value="grid">Grid Search</option>
+                                <option value="random">Random Search</option>
+                                <option value="genetic">Genetic Algorithm</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="target-pairs" class="form-label">Target Pairs</label>
+                            <select class="form-select" id="target-pairs" multiple>
+                                <option value="BTCUSDT" selected>BTCUSDT</option>
+                                <option value="ETHUSDT" selected>ETHUSDT</option>
+                                <option value="ADAUSDT" selected>ADAUSDT</option>
+                                <option value="DOTUSDT" selected>DOTUSDT</option>
+                                <option value="LINKUSDT" selected>LINKUSDT</option>
+                            </select>
+                            <div class="form-text">Hold Ctrl/Cmd to select multiple pairs</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="max-iterations" class="form-label">Max Iterations</label>
+                            <input type="number" class="form-control" id="max-iterations" value="100" min="10" max="1000">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="optimization-metric" class="form-label">Optimization Metric</label>
+                            <select class="form-select" id="optimization-metric">
+                                <option value="sharpe_ratio">Sharpe Ratio</option>
+                                <option value="total_return">Total Return</option>
+                                <option value="max_drawdown">Max Drawdown (minimize)</option>
+                                <option value="win_rate">Win Rate</option>
+                                <option value="profit_factor">Profit Factor</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="cross-validation" class="form-label">Cross Validation Folds</label>
+                            <input type="number" class="form-control" id="cross-validation" value="5" min="2" max="10">
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Parameter Ranges</h5>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="parameter-accordion">
+                        <!-- Model Parameters -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="model-params-header">
+                                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#model-params-collapse">
+                                    Model Parameters
+                                </button>
+                            </h2>
+                            <div id="model-params-collapse" class="accordion-collapse collapse show" data-bs-parent="#parameter-accordion">
+                                <div class="accordion-body">
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Learning Rate</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="0.001" step="0.001">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="0.1" step="0.001">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Regularization</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="0.01" step="0.01">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="1.0" step="0.01">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Window Size</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="10">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="100">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Trading Parameters -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="trading-params-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trading-params-collapse">
+                                    Trading Parameters
+                                </button>
+                            </h2>
+                            <div id="trading-params-collapse" class="accordion-collapse collapse" data-bs-parent="#parameter-accordion">
+                                <div class="accordion-body">
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Signal Threshold</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="0.1" step="0.01">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="0.9" step="0.01">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Stop Loss %</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="1" step="0.1">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="5" step="0.1">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Take Profit %</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="1" step="0.1">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="10" step="0.1">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Risk Management -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="risk-params-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#risk-params-collapse">
+                                    Risk Management
+                                </button>
+                            </h2>
+                            <div id="risk-params-collapse" class="accordion-collapse collapse" data-bs-parent="#parameter-accordion">
+                                <div class="accordion-body">
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Position Size %</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="1" step="0.1">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="10" step="0.1">
+                                        </div>
+                                    </div>
+                                    <div class="row mb-2">
+                                        <div class="col-4"><label class="form-label">Max Exposure %</label></div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Min" value="10" step="1">
+                                        </div>
+                                        <div class="col-4">
+                                            <input type="number" class="form-control form-control-sm" placeholder="Max" value="50" step="1">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optimization Results -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Optimization Results</h5>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-primary" onclick="exportResults()">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearResults()">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <canvas id="optimization-chart" width="400" height="200"></canvas>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">Best Parameters</h6>
+                                    <div id="best-parameters">
+                                        <small class="text-muted">No optimization completed yet</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover" id="results-table">
+                            <thead>
+                                <tr>
+                                    <th>Iteration</th>
+                                    <th>Score</th>
+                                    <th>Parameters</th>
+                                    <th>Cross-Val Score</th>
+                                    <th>Time (s)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-tbody">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">No results yet</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optimization History -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Optimization History</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Method</th>
+                                    <th>Pairs</th>
+                                    <th>Iterations</th>
+                                    <th>Best Score</th>
+                                    <th>Duration</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-tbody">
+                                <!-- History will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let optimizationChart;
+let optimizationStatus = 'idle';
+let startTime;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initOptimizationChart();
+    loadOptimizationHistory();
+    
+    // WebSocket handlers for optimization updates
+    if (window.socket) {
+        window.socket.on('optimization_update', handleOptimizationUpdate);
+        window.socket.on('optimization_result', handleOptimizationResult);
+        window.socket.on('optimization_complete', handleOptimizationComplete);
+    }
+});
+
+function initOptimizationChart() {
+    const ctx = document.getElementById('optimization-chart').getContext('2d');
+    optimizationChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Optimization Score',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                tension: 0.1
+            }, {
+                label: 'Best Score',
+                data: [],
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: true,
+                    text: 'Optimization Progress'
+                }
+            }
+        }
+    });
+}
+
+function startOptimization() {
+    const config = {
+        method: document.getElementById('optimization-method').value,
+        pairs: Array.from(document.getElementById('target-pairs').selectedOptions).map(option => option.value),
+        max_iterations: parseInt(document.getElementById('max-iterations').value),
+        metric: document.getElementById('optimization-metric').value,
+        cv_folds: parseInt(document.getElementById('cross-validation').value),
+        parameters: getParameterRanges()
+    };
+    
+    fetch('/api/optimization/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            optimizationStatus = 'running';
+            updateOptimizationStatus('running');
+            startTime = Date.now();
+            showToast('Optimization started successfully', 'success');
+        } else {
+            showToast('Failed to start optimization: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error starting optimization:', error);
+        showToast('Error starting optimization', 'error');
+    });
+}
+
+function pauseOptimization() {
+    fetch('/api/optimization/pause', { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            optimizationStatus = 'paused';
+            updateOptimizationStatus('paused');
+            showToast('Optimization paused', 'info');
+        }
+    });
+}
+
+function stopOptimization() {
+    fetch('/api/optimization/stop', { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            optimizationStatus = 'stopped';
+            updateOptimizationStatus('stopped');
+            showToast('Optimization stopped', 'warning');
+        }
+    });
+}
+
+function getParameterRanges() {
+    // Collect parameter ranges from the form
+    return {
+        model: {
+            learning_rate: [0.001, 0.1],
+            regularization: [0.01, 1.0],
+            window_size: [10, 100]
+        },
+        trading: {
+            signal_threshold: [0.1, 0.9],
+            stop_loss: [1, 5],
+            take_profit: [1, 10]
+        },
+        risk: {
+            position_size: [1, 10],
+            max_exposure: [10, 50]
+        }
+    };
+}
+
+function updateOptimizationStatus(status) {
+    const statusElement = document.getElementById('optimization-status');
+    const statusColors = {
+        'idle': 'bg-secondary',
+        'running': 'bg-success',
+        'paused': 'bg-warning',
+        'stopped': 'bg-danger',
+        'completed': 'bg-primary'
+    };
+    
+    statusElement.className = `badge ${statusColors[status] || 'bg-secondary'}`;
+    statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function handleOptimizationUpdate(data) {
+    // Update progress bars
+    const iterationProgress = (data.current_iteration / data.total_iterations) * 100;
+    document.getElementById('iteration-progress').style.width = iterationProgress + '%';
+    document.getElementById('iteration-text').textContent = `${data.current_iteration} / ${data.total_iterations}`;
+    
+    document.getElementById('overall-progress').style.width = data.overall_progress + '%';
+    document.getElementById('overall-text').textContent = Math.round(data.overall_progress) + '%';
+    
+    // Update timing
+    if (startTime) {
+        const elapsed = Date.now() - startTime;
+        document.getElementById('elapsed-time').textContent = formatDuration(elapsed);
+        
+        if (data.overall_progress > 0) {
+            const remaining = (elapsed / data.overall_progress) * (100 - data.overall_progress);
+            document.getElementById('remaining-time').textContent = formatDuration(remaining);
+        }
+    }
+    
+    // Update best score
+    if (data.best_score !== undefined) {
+        document.getElementById('best-score').textContent = data.best_score.toFixed(4);
+    }
+}
+
+function handleOptimizationResult(data) {
+    // Add result to chart
+    optimizationChart.data.labels.push(data.iteration);
+    optimizationChart.data.datasets[0].data.push(data.score);
+    optimizationChart.data.datasets[1].data.push(data.best_score);
+    optimizationChart.update();
+    
+    // Add result to table
+    addResultToTable(data);
+    
+    // Update best parameters if this is the best result
+    if (data.is_best) {
+        updateBestParameters(data.parameters);
+    }
+}
+
+function handleOptimizationComplete(data) {
+    optimizationStatus = 'completed';
+    updateOptimizationStatus('completed');
+    showToast('Optimization completed successfully', 'success');
+    loadOptimizationHistory();
+}
+
+function addResultToTable(data) {
+    const tbody = document.getElementById('results-tbody');
+    if (tbody.children[0].colSpan) {
+        tbody.innerHTML = ''; // Clear "no results" message
+    }
+    
+    const row = document.createElement('tr');
+    row.className = data.is_best ? 'table-success' : '';
+    row.innerHTML = `
+        <td>${data.iteration}</td>
+        <td>${data.score.toFixed(4)}</td>
+        <td><small>${JSON.stringify(data.parameters).substring(0, 50)}...</small></td>
+        <td>${data.cv_score ? data.cv_score.toFixed(4) : '--'}</td>
+        <td>${data.time.toFixed(2)}</td>
+        <td>
+            <button class="btn btn-sm btn-outline-primary" onclick="viewParameters(${data.iteration})">
+                <i class="fas fa-eye"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(row);
+}
+
+function updateBestParameters(parameters) {
+    const container = document.getElementById('best-parameters');
+    container.innerHTML = '';
+    
+    for (const [category, params] of Object.entries(parameters)) {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.innerHTML = `<strong>${category}:</strong>`;
+        
+        for (const [param, value] of Object.entries(params)) {
+            const paramDiv = document.createElement('div');
+            paramDiv.innerHTML = `<small class="text-muted">${param}: ${value}</small>`;
+            categoryDiv.appendChild(paramDiv);
+        }
+        
+        container.appendChild(categoryDiv);
+    }
+}
+
+function loadOptimizationHistory() {
+    fetch('/api/optimization/history')
+    .then(response => response.json())
+    .then(data => {
+        const tbody = document.getElementById('history-tbody');
+        tbody.innerHTML = '';
+        
+        data.forEach(item => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${new Date(item.date).toLocaleDateString()}</td>
+                <td>${item.method}</td>
+                <td>${item.pairs.join(', ')}</td>
+                <td>${item.iterations}</td>
+                <td>${item.best_score ? item.best_score.toFixed(4) : '--'}</td>
+                <td>${item.duration}</td>
+                <td><span class="badge bg-${item.status === 'completed' ? 'success' : 'warning'}">${item.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewOptimizationDetails('${item.id}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    });
+}
+
+function exportResults() {
+    fetch('/api/optimization/export')
+    .then(response => response.blob())
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `optimization_results_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+    });
+}
+
+function clearResults() {
+    if (confirm('Are you sure you want to clear all results?')) {
+        optimizationChart.data.labels = [];
+        optimizationChart.data.datasets[0].data = [];
+        optimizationChart.data.datasets[1].data = [];
+        optimizationChart.update();
+        
+        document.getElementById('results-tbody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">No results yet</td></tr>';
+        document.getElementById('best-parameters').innerHTML = '<small class="text-muted">No optimization completed yet</small>';
+    }
+}
+
+function formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000) % 60;
+    const minutes = Math.floor(ms / (1000 * 60)) % 60;
+    const hours = Math.floor(ms / (1000 * 60 * 60));
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function viewParameters(iteration) {
+    // Implementation for viewing detailed parameters
+    showToast('Parameter details view not implemented yet', 'info');
+}
+
+function viewOptimizationDetails(id) {
+    // Implementation for viewing optimization details
+    showToast('Optimization details view not implemented yet', 'info');
+}
+</script>
+{% endblock %}
