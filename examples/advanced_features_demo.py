@@ -305,9 +305,10 @@ class AdvancedFeaturesDemo:
                 logger.info("Please set BINANCE_API_KEY and BINANCE_API_SECRET for live trading")
                 logger.info("Continuing with demo configuration...")
                 
-                # Use demo credentials
-                api_key = "demo_key"
-                api_secret = "demo_secret"
+                # Use demo credentials from environment variables
+                # SECURITY: Never hardcode credentials, even for demos
+                api_key = os.getenv('DEMO_API_KEY', 'demo_key_placeholder')
+                api_secret = os.getenv('DEMO_API_SECRET', 'demo_secret_placeholder')
             
             # Initialize Real-Time Trader (in testnet mode)
             trader = BinanceRealTimeTrader(

@@ -7,8 +7,8 @@ class EnvironmentConfig:
     """
     def __init__(self, environment_name: str):
         self.environment_name = environment_name
-        self.broker_api_key = os.getenv(f"{environment_name.upper()}_BROKER_API_KEY", "default_api_key")
-        self.broker_api_secret = os.getenv(f"{environment_name.upper()}_BROKER_API_SECRET", "default_api_secret")
+        self.broker_api_key = os.getenv(f"{environment_name.upper()}_BROKER_API_KEY", "")
+        self.broker_api_secret = os.getenv(f"{environment_name.upper()}_BROKER_API_SECRET", "")
         self.broker_url = os.getenv(f"{environment_name.upper()}_BROKER_URL", "default_broker_url") # Généralement pour l'exécution
 
         # Configuration spécifique à la source de données
@@ -21,14 +21,14 @@ class EnvironmentConfig:
 
 
         # Clés pour Bitget (si data_source_name == 'bitget')
-        self.bitget_api_key = os.getenv(f"{environment_name.upper()}_BITGET_API_KEY", "default_bitget_api_key")
-        self.bitget_api_secret = os.getenv(f"{environment_name.upper()}_BITGET_API_SECRET", "default_bitget_api_secret")
-        self.bitget_passphrase = os.getenv(f"{environment_name.upper()}_BITGET_PASSPHRASE", "default_bitget_passphrase")
+        self.bitget_api_key = os.getenv(f"{environment_name.upper()}_BITGET_API_KEY", "")
+        self.bitget_api_secret = os.getenv(f"{environment_name.upper()}_BITGET_API_SECRET", "")
+        self.bitget_passphrase = os.getenv(f"{environment_name.upper()}_BITGET_PASSPHRASE", "")
         # Bitget n'a pas de mode testnet distinct pour l'API publique de klines de la même manière que Binance,
         # mais on pourrait avoir une URL de base différente pour un sandbox si disponible.
         # Pour l'instant, on utilise l'URL de production.
 
-        self.db_connection_string = os.getenv(f"{environment_name.upper()}_DB_CONNECTION_STRING", "default_db_string")
+        self.db_connection_string = os.getenv(f"{environment_name.upper()}_DB_CONNECTION_STRING", "")
         self.log_level = os.getenv(f"{environment_name.upper()}_LOG_LEVEL", "INFO")
         self.is_simulated_execution = True # Par défaut, exécution simulée
 

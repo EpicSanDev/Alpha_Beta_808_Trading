@@ -63,9 +63,24 @@ def check_stop_loss(
         stop_price = entry_price * (1 + stop_loss_percentage)
         return current_price >= stop_price
 
-# La fonction check_position_limit (lignes 59-77 du fichier original) est supprimée
-# car sa logique est mieux couverte par check_max_total_notional_exposure
-# et check_single_trade_notional_vs_capital.
+def check_position_limit(
+    new_position_size: float,
+    current_total_exposure: float,
+    max_exposure_limit: float
+) -> bool:
+    """
+    Vérifie si l'ajout d'une nouvelle position dépasserait les limites d'exposition.
+    
+    Args:
+        new_position_size (float): Taille de la nouvelle position à ajouter
+        current_total_exposure (float): Exposition totale actuelle
+        max_exposure_limit (float): Limite d'exposition maximale autorisée
+        
+    Returns:
+        bool: True si la position est autorisée, False sinon
+    """
+    projected_exposure = current_total_exposure + abs(new_position_size)
+    return projected_exposure <= max_exposure_limit
 
 def check_total_leverage_limit(
     current_portfolio_value: float,

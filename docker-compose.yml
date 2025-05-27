@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  trading-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: alphabeta808/trading-bot:latest
+    container_name: alphabeta808-trading-bot
+    restart: unless-stopped
+    environment:
+      - PYTHONPATH=/app/src:/app
+      - LOG_LEVEL=INFO
+      - FLASK_ENV=production
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+    volumes:
+      - ./trader_config.json:/app/trader_config.json:ro
+      - ./models_store:/app/models_store
+      - ./logs:/app/logs
+      - ./backtest_results:/app/backtest_results
+      - ./reports:/app/reports
+    command: ["python", "live_trading_bot.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/system/status', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - trading-network
+
+  web-interface:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: alphabeta808/trading-bot:latest
+    container_name: alphabeta808-web-interface
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONPATH=/app/src:/app
+      - LOG_LEVEL=INFO
+      - FLASK_ENV=production
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - WEB_ADMIN_USER=${WEB_ADMIN_USER:-admin}
+      - WEB_ADMIN_PASSWORD=${WEB_ADMIN_PASSWORD}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    volumes:
+      - ./trader_config.json:/app/trader_config.json:ro
+      - ./models_store:/app/models_store:ro
+      - ./logs:/app/logs:ro
+      - ./backtest_results:/app/backtest_results:ro
+      - ./reports:/app/reports:ro
+    command: ["python", "web_interface/app_enhanced.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - trading-bot
+    networks:
+      - trading-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: alphabeta808-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - trading-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: alphabeta808-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - trading-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: alphabeta808-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - trading-network
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  redis_data:
+
+networks:
+  trading_network:
+    driver: bridge
+
+# Production deployment notes:
+# 1. Set environment variables in .env file
+# 2. Configure Binance API keys securely
+# 3. Set strong passwords for admin interfaces
+# 4. Use SSL/TLS certificates in production
+# 5. Configure proper backup strategies for volumes
+# 6. Monitor resource usage and scale as needed

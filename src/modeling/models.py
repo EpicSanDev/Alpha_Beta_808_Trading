@@ -17,13 +17,13 @@ import xgboost # Pour la version
 # pandas et numpy sont déjà importés
 # optuna est déjà importé
 # Imports pour les nouveaux modèles
-# Pour les réseaux de neurones (LSTM, CNN) - choisir l'un ou l'autre ou les deux
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Bidirectional, Dense, Dropout, Conv1D, MaxPooling1D, GlobalAveragePooling1D # Attention retiré pour l'instant
-from tensorflow.keras.layers import Reshape, Add, Activation, BatchNormalization # Pour Squeeze-and-Excitation, connexions résiduelles
-from tensorflow.keras import regularizers
-from tensorflow.keras.callbacks import EarlyStopping
+# Pour les réseaux de neurones (LSTM, CNN) - avec compatibilité
+from .tensorflow_compat import (
+    tf, Sequential, LSTM, Bidirectional, Dense, Dropout, Conv1D, MaxPooling1D, 
+    GlobalAveragePooling1D, Reshape, Add, Activation, BatchNormalization, 
+    regularizers, EarlyStopping, require_tensorflow, is_tensorflow_available,
+    TENSORFLOW_AVAILABLE
+)
 
 
 # import torch
@@ -31,8 +31,17 @@ from tensorflow.keras.callbacks import EarlyStopping
 # import torch.optim as optim
 
 # Pour les Processus Gaussiens
-# import GPy
-import gpflow
+try:
+    import gpflow
+    GPFLOW_AVAILABLE = True
+except ImportError:
+    GPFLOW_AVAILABLE = False
+    class MockGPflow:
+        def __getattr__(self, name):
+            return MockGPflow()
+        def __call__(self, *args, **kwargs):
+            return MockGPflow()
+    gpflow = MockGPflow()
 
 # Pour les Modèles Bayésiens Hiérarchiques
 import pymc as pm # Changé de pymc3 à pymc
@@ -67,6 +76,8 @@ class BidirectionalLSTMModel:
         **kwargs: Arguments supplémentaires passés par Keras.
     """
     def __init__(self, input_shape, num_layers=1, units=50, output_units=1, activation='sigmoid', dropout_rate=0.2, variational_dropout=False, l1_reg=0.0, l2_reg=0.0, use_temporal_attention=False, use_multi_resolution=False, temporal_regularization_factor=None, **kwargs):
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required for BidirectionalLSTMModel but is not installed.")
         self.input_shape = input_shape
         self.num_layers = num_layers
         self.units = units
@@ -1018,8 +1029,12 @@ def train_model(X: pd.DataFrame, y: Optional[pd.Series], model_type: str = 'logi
         constructor_params.pop('class_weight', None) # Pas pertinent pour la régression
         model = GradientBoostingRegressor(**constructor_params) # GradientBoostingRegressor peut faire de la régression quantile
     elif model_type == 'bidirectional_lstm':
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required for BidirectionalLSTMModel but is not installed. Install with: pip install tensorflow>=2.13.0")
         model = BidirectionalLSTMModel(**constructor_params)
     elif model_type == 'temporal_cnn':
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required for TemporalCNNModel but is not installed. Install with: pip install tensorflow>=2.13.0")
         model = TemporalCNNModel(**constructor_params)
     elif model_type == 'gaussian_process_regressor':
         temp_inducing_sample = constructor_params.pop('X_train_sample_for_inducing_variable', None)

@@ -1,3 +1,21 @@
+# AlphaBeta808 Trading Bot - Production .gitignore
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+.env.test
+*.env
+config/secrets.json
+secrets/
+credentials/
+
+# API Keys and sensitive data
+*api_key*
+*secret*
+*password*
+*token*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -31,6 +31,20 @@ class BinanceConnector:
         """
         if not BINANCE_AVAILABLE:
             raise ImportError("La librairie python-binance n'est pas installée. Veuillez l'installer avec 'pip install python-binance'.")
+        
+        # SECURITY: Validate API credentials
+        if not api_key or not api_secret:
+            raise ValueError("API key and secret are required and cannot be empty")
+            
+        # Check for common placeholder values
+        placeholder_values = ['your_api_key_here', 'change_me', 'test_key', 'your_actual_binance_api_key_here']
+        if api_key in placeholder_values or api_secret in placeholder_values:
+            raise ValueError("Invalid API credentials: placeholder values detected. Please use actual API credentials.")
+        
+        # Minimum length validation
+        if len(api_key) < 10 or len(api_secret) < 10:
+            raise ValueError("API credentials appear to be too short. Please verify your credentials.")
+            
         self.client = Client(api_key, api_secret, testnet=testnet)
         self.api_key = api_key
         self.api_secret = api_secret
@@ -945,8 +959,18 @@ if __name__ == '__main__':
     from dotenv import load_dotenv
     load_dotenv() # Charge les variables depuis .env s'il existe
 
+    # SECURITY: Use test API keys when available, never hardcode credentials
     api_key_test = os.getenv('BINANCE_API_KEY_TEST') # Utilisez des clés de test si possible
     api_secret_test = os.getenv('BINANCE_API_SECRET_TEST')
+    
+    # Validate that API credentials are provided and not default values
+    if api_key_test and api_secret_test:
+        # Check for placeholder/default values
+        if (api_key_test in ['your_api_key_here', 'change_me', 'test_key'] or
+            api_secret_test in ['your_api_secret_here', 'change_me', 'test_secret']):
+            print("WARNING: Default API credentials detected. Please set proper test credentials.")
+            api_key_test = None
+            api_secret_test = None
 
     if api_key_test and api_secret_test:
         try:

@@ -281,6 +281,7 @@ class ComprehensiveBacktester:
                     api_key = os.getenv('BINANCE_API_KEY')
                     api_secret = os.getenv('BINANCE_API_SECRET')
                     
+                    # SECURITY: Validate API credentials
                     if not api_key or not api_secret:
                         logger.warning(f"Clés API manquantes pour {symbol}, utilisation de données aléatoires")
                         symbol_data = generate_random_market_data(
@@ -289,6 +290,17 @@ class ComprehensiveBacktester:
                             volatility=0.02, 
                             freq='D'
                         )
+                    else:
+                        # Check for placeholder/default values
+                        placeholder_values = ['your_api_key_here', 'change_me', 'test_key', 'your_actual_binance_api_key_here']
+                        if api_key in placeholder_values or api_secret in placeholder_values:
+                            logger.warning(f"Placeholder API credentials detected for {symbol}, utilisation de données aléatoires")
+                            symbol_data = generate_random_market_data(
+                                num_rows=lookback_days, 
+                                start_price=100.0, 
+                                volatility=0.02, 
+                                freq='D'
+                            )
                         symbol_data['symbol'] = symbol
                         symbol_data['interval'] = '1d'
                         all_data.append(symbol_data)

@@ -194,6 +194,19 @@ class BinanceRealTimeTrader:
             testnet: Utiliser le testnet (recommandé pour les tests)
             risk_manager: Gestionnaire de risques
         """
+        # SECURITY: Validate API credentials
+        if not api_key or not api_secret:
+            raise ValueError("API key and secret are required and cannot be empty")
+            
+        # Check for common placeholder values
+        placeholder_values = ['your_api_key_here', 'change_me', 'test_key', 'your_actual_binance_api_key_here']
+        if api_key in placeholder_values or api_secret in placeholder_values:
+            raise ValueError("Invalid API credentials: placeholder values detected. Please use actual API credentials.")
+        
+        # Minimum length validation
+        if len(api_key) < 10 or len(api_secret) < 10:
+            raise ValueError("API credentials appear to be too short. Please verify your credentials.")
+            
         self.api_key = api_key
         self.api_secret = api_secret
         self.testnet = testnet

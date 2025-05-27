@@ -152,9 +152,14 @@ class TestAdvancedFeaturesIntegration(unittest.TestCase):
             from execution.real_time_trading import BinanceRealTimeTrader, TradingStrategy
             
             # Test trader initialization (demo mode)
+            # SECURITY: Use environment variables for demo credentials
+            import os
+            demo_api_key = os.getenv('DEMO_API_KEY', 'demo_key_placeholder')
+            demo_api_secret = os.getenv('DEMO_API_SECRET', 'demo_secret_placeholder')
+            
             trader = BinanceRealTimeTrader(
-                api_key="demo_key",
-                api_secret="demo_secret",
+                api_key=demo_api_key,
+                api_secret=demo_api_secret,
                 testnet=True
             )
             

@@ -70,13 +70,82 @@ print("✅ Modules de trading principaux importés (vérifiez les chemins si err
 
 # Configuration Flask
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'alphabeta808_trading_secret_key_enhanced'
-app.config['DEBUG'] = True
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback_secret_key_for_dev_only')
+app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
 app.config['DATABASE'] = 'trading_web.db'
+
+# Security Headers
+@app.after_request
+def set_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
 
 # Extensions
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 CORS(app)
+
+# Default Settings Configuration
+DEFAULT_SETTINGS_NAME = "default_config"
+DEFAULT_SETTINGS = {
+    'trading': {
+        'mode': 'paper', # 'paper' or 'live'
+        'frequency': '5m',
+        'base_currency': 'USDT',
+        'pairs': ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOTUSDT'],
+        'max_positions': 5,
+        'signal_threshold': 0.6,
+        'min_trade_interval': 30, # minutes
+        'auto_trading': True,
+        'weekend_trading': False
+    },
+    'risk': {
+        'position_size_pct': 2.0, # % of portfolio
+        'max_portfolio_risk': 20.0, # % of portfolio
+        'max_daily_loss': 5.0, # % of portfolio
+        'stop_loss_pct': 2.0, # % below entry
+        'take_profit_pct': 4.0, # % above entry
+        'trailing_stop': 1.0, # % trailing
+        'correlation_limit': 0.7,
+        'drawdown_limit': 15.0, # % max drawdown
+        'emergency_stop': True,
+        'risk_scaling': True
+    },
+    'api': {
+        'exchange': 'binance',
+        'api_key': '',
+        'api_secret': '',
+        'timeout': 30, # seconds
+        'rate_limit': 1200, # requests per minute
+        'sandbox': True # Use testnet/sandbox
+    },
+    'notifications': {
+        'email_enabled': False,
+        'email_address': '',
+        'telegram_enabled': False,
+        'telegram_token': '',
+        'telegram_chat_id': '',
+        'notify_trades': True,
+        'notify_errors': True,
+        'notify_alerts': True
+    },
+    'model': {
+        'update_frequency': 'daily', # 'hourly', 'daily', 'weekly'
+        'ensemble_size': 5,
+        'lookback_period': 30, # days
+        'prediction_horizon': 24 # hours
+    },
+    'system': {
+        'log_level': 'INFO', # 'DEBUG', 'INFO', 'WARNING', 'ERROR'
+        'max_log_files': 30,
+        'data_retention_days': 90,
+        'timezone': 'UTC'
+    }
+}
 
 @dataclass
 class TradingStats:
@@ -283,9 +352,22 @@ class DatabaseManager:
         # Créer un utilisateur par défaut
         cursor.execute('SELECT COUNT(*) FROM users')
         if cursor.fetchone()[0] == 0:
-            default_password = generate_password_hash('admin123')
+            # Use environment variable for default password, generate secure random if not provided
+            default_password_plain = os.getenv('WEB_ADMIN_PASSWORD')
+            if not default_password_plain:
+                # Generate a secure random password if environment variable is not set
+                import secrets
+                import string
+                alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+                default_password_plain = ''.join(secrets.choice(alphabet) for _ in range(16))
+                logger.warning("No WEB_ADMIN_PASSWORD environment variable set. Generated random password for admin user.")
+                logger.warning(f"Generated admin password: {default_password_plain}")
+                logger.warning("Please set WEB_ADMIN_PASSWORD environment variable for production use.")
+            
+            default_password = generate_password_hash(default_password_plain)
+            default_username = os.getenv('WEB_ADMIN_USER', 'admin')
             cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', 
-                         ('admin', default_password))
+                         (default_username, default_password))
         
         # Initialiser les soldes par défaut
         cursor.execute('SELECT COUNT(*) FROM balances')
@@ -1833,8 +1915,10 @@ def api_start_optimization():
                         # ... (reste du traitement des données réelles) ...
                         # (Le code original pour data_cleaned, data_features, processed_data, feature_cols, target_col irait ici)
                         # Pour l'instant, on va laisser le bloc try échouer pour utiliser les données factices,
-                        # car la correction principale est sur l'erreur 'processed_data'.
-
+                        # car la correction principale est sur l'erreur 'processed_data' et 'BinanceConnector'
+                        # Ceci est un placeholder pour une vraie implémentation de chargement de données.
+                        raise Exception("Placeholder: données réelles non chargées")
+                        
                         # Placeholder pour le code de traitement des données réelles qui définirait :
                         # data_cleaned, data_features, processed_data, feature_cols, target_col, problem_type_config
                         # Ce code est omis pour se concentrer sur la correction de `processed_data` et `BinanceConnector`
@@ -1957,7 +2041,7 @@ def api_start_optimization():
         threading.Thread(target=run_optimization).start()
         return jsonify({'success': True, 'optimization_id': optimization_id})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/optimization/pause', methods=['POST'])
 @login_required
@@ -2403,63 +2487,6 @@ def api_export_trades():
 
 # Settings API Endpoints
 
-DEFAULT_SETTINGS_NAME = "default_config"
-DEFAULT_SETTINGS = {
-    'trading': {
-        'mode': 'paper', # 'paper' or 'live'
-        'frequency': '5m',
-        'base_currency': 'USDT',
-        'pairs': ['BTCUSDT', 'ETHUSDT', 'ADAUSDT', 'DOTUSDT'],
-        'max_positions': 5,
-        'signal_threshold': 0.6,
-        'min_trade_interval': 30, # minutes
-        'auto_trading': True,
-        'weekend_trading': False
-    },
-    'risk': {
-        'position_size_pct': 2.0, # % of portfolio
-        'max_portfolio_risk': 20.0, # % of portfolio
-        'max_daily_loss': 5.0, # % of portfolio
-        'stop_loss_pct': 2.0, # % below entry
-        'take_profit_pct': 4.0, # % above entry
-        'trailing_stop': 1.0, # % trailing
-        'correlation_limit': 0.7,
-        'drawdown_limit': 15.0, # % max drawdown
-        'emergency_stop': True,
-        'risk_scaling': True
-    },
-    'api': {
-        'exchange': 'binance',
-        'api_key': '',
-        'api_secret': '',
-        'timeout': 30, # seconds
-        'rate_limit': 1200, # requests per minute
-        'sandbox': True # Use testnet/sandbox
-    },
-    'notifications': {
-        'email_enabled': False,
-        'email_address': '',
-        'telegram_enabled': False,
-        'telegram_token': '',
-        'telegram_chat_id': '',
-        'notify_trades': True,
-        'notify_errors': True,
-        'notify_alerts': True
-    },
-    'model': {
-        'update_frequency': 'daily', # 'hourly', 'daily', 'weekly'
-        'ensemble_size': 5,
-        'lookback_period': 30, # days
-        'prediction_horizon': 24 # hours
-    },
-    'system': {
-        'log_level': 'INFO', # 'DEBUG', 'INFO', 'WARNING', 'ERROR'
-        'max_log_files': 30,
-        'data_retention_days': 90,
-        'timezone': 'UTC'
-    }
-}
-
 @app.route('/api/settings')
 @login_required
 def api_get_settings():
@@ -2515,7 +2542,7 @@ def api_reset_settings():
     try:
         web_interface.db_manager.save_configuration(DEFAULT_SETTINGS_NAME, DEFAULT_SETTINGS, is_active=True)
         web_interface.db_manager.add_notification("info", "Settings Reset", "System settings have been reset to defaults.")
-        # Re-initialize trader if API settings were part of defaults
+        # Re-initialiser trader si les paramètres API faisaient partie des valeurs par défaut
         if web_interface.real_trader:
              web_interface.initialize_real_trader(
                 DEFAULT_SETTINGS['api']['api_key'],
@@ -2729,380 +2756,151 @@ def api_create_backup():
         web_interface.db_manager.add_notification("error", "System Backup Failed", f"Erreur lors de la création de la sauvegarde: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
-# Additional API endpoints for advanced trading features
-
-# Price Alerts API Endpoints
-@app.route('/api/alerts', methods=['GET'])
-@login_required
-def api_get_alerts():
-    """API: Get all price alerts"""
+# Health check endpoint for monitoring
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring systems"""
     try:
-        active_only = request.args.get('active_only', 'true').lower() == 'true'
-        alerts = web_interface.db_manager.get_price_alerts(active_only=active_only)
-        return jsonify({'success': True, 'alerts': alerts})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/alerts', methods=['POST'])
-@login_required
-def api_create_alert():
-    """API: Create price alert"""
-    try:
-        data = request.json
-        alert_id = web_interface.alert_manager.add_alert(
-            symbol=data['symbol'],
-            condition=data['condition'],
-            value=float(data['value'])
-        )
-        return jsonify({'success': True, 'alert_id': alert_id, 'message': 'Alert created successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/alerts/<alert_id>', methods=['DELETE'])
-@login_required
-def api_delete_alert(alert_id):
-    """API: Delete price alert"""
-    try:
-        web_interface.alert_manager.remove_alert(alert_id)
-        return jsonify({'success': True, 'message': 'Alert deleted successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# Trading Execution API Endpoints
-@app.route('/api/trading/mode', methods=['GET'])
-@login_required
-def api_get_trading_mode():
-    """API: Get current trading mode"""
-    return jsonify({
-        'success': True,
-        'mode': safe_asdict(web_interface.trading_mode)
-    })
-
-@app.route('/api/trading/mode', methods=['POST'])
-@login_required
-def api_set_trading_mode():
-    """API: Set trading mode (paper/live)"""
-    try:
-        data = request.json
-        is_paper = data.get('is_paper', True)
-        web_interface.trade_executor.switch_trading_mode(is_paper)
-        return jsonify({'success': True, 'message': f'Switched to {"paper" if is_paper else "live"} trading'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/trading/execute', methods=['POST'])
-@login_required
-def api_execute_trade():
-    """API: Execute manual trade"""
-    try:
-        data = request.json
-        result = web_interface.trade_executor.execute_trade(
-            symbol=data['symbol'],
-            side=data['side'],
-            quantity=float(data['quantity']),
-            order_type=data.get('order_type', 'market'),
-            price=float(data['price']) if data.get('price') else None,
-            is_paper=web_interface.trading_mode.is_paper_trading
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/trading/order/cancel/<order_id>', methods=['POST'])
-@login_required
-def api_cancel_order(order_id):
-    """API: Annuler un ordre de trading spécifique."""
-    try:
-        if web_interface.trading_mode.is_paper_trading:
-            # Logique d'annulation pour le paper trading (si applicable, ex: marquer comme annulé en DB)
-            # Pour l'instant, on simule le succès car les ordres papier sont souvent instantanés.
-            # On pourrait ajouter une logique pour retrouver l'ordre dans la DB et le marquer.
-            web_interface.db_manager.add_notification("info", "Paper Order Cancel (Simulated)", f"Tentative d'annulation de l'ordre papier {order_id} (simulation).")
-            return jsonify({'success': True, 'message': f'Annulation de l\'ordre papier {order_id} simulée.'})
-
-        elif web_interface.real_trader:
-            # S'assurer que real_trader est une instance de BinanceRealTimeTrader
-            if not isinstance(web_interface.real_trader, BinanceRealTimeTrader):
-                 return jsonify({"success": False, "error": "Trader réel (BinanceRealTimeTrader) non correctement initialisé."})
-
-            # Récupérer le symbole de l'ordre. Ceci est crucial pour l'API Binance.
-            # On suppose que l'order_id seul n'est pas suffisant pour l'API de BinanceRealTimeTrader.
-            # Il faut trouver le symbole associé à cet order_id.
-            # On peut le chercher dans la base de données des trades.
-            trade_details_list = web_interface.db_manager.execute_query(
-                "SELECT symbol FROM trades WHERE order_id = ? AND is_paper_trade = 0 ORDER BY timestamp DESC LIMIT 1", (order_id,)
-            )
-            if not trade_details_list:
-                return jsonify({'success': False, 'error': f'Impossible de trouver le symbole pour l\'ordre réel {order_id}.'}), 404
-            
-            symbol = trade_details_list[0]['symbol']
-            if not symbol:
-                 return jsonify({'success': False, 'error': f'Symbole non trouvé pour l\'ordre réel {order_id}.'}), 404
-
-            cancellation_result = web_interface.real_trader.cancel_order(order_id, symbol)
-            
-            if cancellation_result and cancellation_result.get('status') == 'CANCELED': # Supposant que cancel_order retourne un dict avec un statut
-                web_interface.db_manager.add_notification("success", "Real Order Canceled", f"Ordre réel {order_id} ({symbol}) annulé avec succès.")
-                # Mettre à jour le statut de l'ordre dans la DB si nécessaire
-                return jsonify({'success': True, 'message': f'Ordre réel {order_id} ({symbol}) annulé avec succès.', 'details': cancellation_result})
-            else:
-                error_msg = cancellation_result.get('msg', 'Échec de l\'annulation par l\'exchange.') if cancellation_result else 'Réponse invalide de l\'exchange.'
-                web_interface.db_manager.add_notification("error", "Real Order Cancel Failed", f"Échec de l'annulation de l'ordre réel {order_id} ({symbol}): {error_msg}")
-                return jsonify({'success': False, 'error': f'Échec de l\'annulation de l\'ordre réel {order_id} ({symbol}): {error_msg}', 'details': cancellation_result})
-        else:
-            return jsonify({'success': False, 'error': 'Trader réel non configuré ou mode papier actif sans logique d\'annulation.'})
-            
-    except Exception as e:
-        print(f"Erreur dans api_cancel_order: {e}")
-        web_interface.db_manager.add_notification("error", "Order Cancel Failed", f"Erreur lors de l'annulation de l'ordre {order_id}: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
-
-# Portfolio Management API Endpoints
-@app.route('/api/portfolio/value')
-@login_required
-def api_portfolio_value():
-    """API: Get portfolio value"""
-    try:
-        paper_value = web_interface.trade_executor.get_portfolio_value(is_paper=True)
-        real_value = web_interface.trade_executor.get_portfolio_value(is_paper=False)
-        
-        return jsonify({
-            'success': True,
-            'paper_value': paper_value,
-            'real_value': real_value,
-            'current_value': paper_value if web_interface.trading_mode.is_paper_trading else real_value
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/portfolio/balances')
-@login_required
-def api_portfolio_balances():
-    """API: Get portfolio balances"""
-    try:
-        paper_balances = web_interface.trading_mode.balance_paper
-        real_balances = web_interface.trading_mode.balance_real
-        
-        return jsonify({
-            'success': True,
-            'paper_balances': paper_balances,
-            'real_balances': real_balances,
-            'current_balances': paper_balances if web_interface.trading_mode.is_paper_trading else real_balances
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/portfolio/positions')
-@login_required
-def api_portfolio_positions():
-    """API: Get open positions"""
-    try:
-        positions = web_interface.db_manager.get_positions(open_only=True)
-        return jsonify({'success': True, 'positions': positions})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/portfolio/pnl')
-@login_required
-def api_portfolio_pnl():
-    """API: Get P&L summary"""
-    try:
-        # Update positions PnL first
-        web_interface.trade_executor.update_positions_pnl()
-        
-        positions = web_interface.db_manager.get_positions(open_only=True)
-        total_pnl = sum(pos.get('pnl', 0) for pos in positions)
-        total_pnl_percent = sum(pos.get('pnl_percent', 0) for pos in positions) / len(positions) if positions else 0
-        
-        return jsonify({
-            'success': True,
-            'total_pnl': total_pnl,
-            'total_pnl_percent': total_pnl_percent,
-            'daily_pnl': web_interface.trading_stats.daily_pnl,
-            'monthly_pnl': web_interface.trading_stats.monthly_pnl,
-            'open_positions': len(positions)
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# Risk Management API Endpoints
-@app.route('/api/risk/metrics')
-@login_required
-def api_risk_metrics():
-    """API: Get risk metrics"""
-    try:
-        portfolio_value = web_interface.get_portfolio_value(web_interface.trading_mode.is_paper_trading)
-        positions = web_interface.db_manager.get_positions(open_only=True)
-        
-        # Calculate risk metrics
-        total_exposure = sum(pos.get('margin_used', 0) for pos in positions)
-        exposure_percent = (total_exposure / portfolio_value * 100) if portfolio_value > 0 else 0
-        
-        # Simulate other risk metrics
-        # TODO: Remplacer var_95 par un calcul réel si possible (nécessite des données historiques de rendement)
-        var_95_placeholder = portfolio_value * 0.05  # Placeholder: 5% VaR
-        max_drawdown = web_interface.trading_stats.max_drawdown # Provient des stats globales
-        
-        # Note: daily_pnl ici est global (paper ou live selon le mode actif du bot).
-        # Pour des métriques de risque plus précises, il faudrait distinguer le PnL par mode.
-        
-        return jsonify({
-            'success': True,
-            'portfolio_value': portfolio_value,
-            'total_exposure': total_exposure,
-            'exposure_percent': exposure_percent,
-            'var_95_placeholder': var_95_placeholder, # Indiquer que c'est un placeholder
-            'max_drawdown': max_drawdown, # Max drawdown global
-            'open_positions': len(positions),
-            'daily_pnl_global': web_interface.trading_stats.daily_pnl, # PnL global du jour
-            'risk_level': 'LOW' if exposure_percent < 50 else 'MEDIUM' if exposure_percent < 80 else 'HIGH'
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/risk/position-size', methods=['POST'])
-@login_required
-def api_calculate_position_size():
-    """API: Calculate optimal position size"""
-    try:
-        data = request.json
-        symbol = data['symbol']
-        risk_percent = float(data.get('risk_percent', 2.0))
-        stop_loss_percent = float(data.get('stop_loss_percent', 2.0))
-        
-        current_price = web_interface.get_real_time_price(symbol)
-        portfolio_value = web_interface.get_portfolio_value(web_interface.trading_mode.is_paper_trading)
-        
-        # Calculate position size based on risk
-        risk_amount = portfolio_value * (risk_percent / 100)
-        price_diff = current_price * (stop_loss_percent / 100)
-        max_quantity = risk_amount / price_diff if price_diff > 0 else 0
-        
-        # Apply portfolio exposure limits
-        max_position_value = portfolio_value * 0.2  # Max 20% per position
-        max_quantity_by_exposure = max_position_value / current_price if current_price > 0 else 0
-        
-        recommended_quantity = min(max_quantity, max_quantity_by_exposure)
-        
-        return jsonify({
-            'success': True,
-            'recommended_quantity': recommended_quantity,
-            'position_value': recommended_quantity * current_price,
-            'risk_amount': risk_amount,
-            'current_price': current_price,
-            'stop_loss_price': current_price * (1 - stop_loss_percent / 100)
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# Real Balance Integration API Endpoints
-@app.route('/api/balance/sync', methods=['POST'])
-@login_required
-def api_sync_real_balances():
-    """API: Sync real balances from exchange"""
-    try:
-        if not web_interface.real_trader:
-            return jsonify({'success': False, 'error': 'Real trader not connected'})
-        
-        # Get account info from exchange
-        account_info = web_interface.real_trader.get_account_info()
-        
-        if account_info:
-            # Update balances in database
-            for balance in account_info.get('balances', []):
-                asset = balance['asset']
-                free_balance = float(balance['free'])
-                locked_balance = float(balance['locked'])
-                total_balance = free_balance + locked_balance
-                
-                if total_balance > 0:
-                    web_interface.db_manager.update_balance(asset, total_balance, is_paper=False)
-            
-            # Refresh cached balances
-            web_interface._initialize_balances()
-            
-            return jsonify({'success': True, 'message': 'Real balances synced successfully'})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to fetch account info'})
-            
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/balance/initialize-trader', methods=['POST'])
-@login_required
-def api_initialize_trader():
-    """API: Initialize real trader connection"""
-    try:
-        data = request.json
-        api_key = data.get('api_key', '')
-        api_secret = data.get('api_secret', '')
-        testnet = data.get('testnet', True)
-        
-        if not api_key or not api_secret:
-            return jsonify({'success': False, 'error': 'API credentials required'})
-        
-        success = web_interface.initialize_real_trader(api_key, api_secret, testnet)
-        
-        if success:
-            return jsonify({'success': True, 'message': 'Real trader initialized successfully'})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to initialize real trader'})
-            
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# Notifications API Endpoints
-@app.route('/api/notifications')
-@login_required
-def api_get_notifications():
-    """API: Get notifications"""
-    try:
-        unread_only = request.args.get('unread_only', 'false').lower() == 'true'
-        limit = request.args.get('limit', 50, type=int)
-        
-        notifications = web_interface.db_manager.get_notifications(unread_only=unread_only, limit=limit)
-        return jsonify({'success': True, 'notifications': notifications})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
-@login_required
-def api_mark_notification_read(notification_id):
-    """API: Mark notification as read"""
-    try:
-        web_interface.db_manager.mark_notification_read(notification_id)
-        return jsonify({'success': True, 'message': 'Notification marked as read'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# TradingView Integration API Endpoints
-@app.route('/api/tradingview/config/<symbol>')
-@login_required
-def api_tradingview_config(symbol):
-    """API: Get TradingView widget configuration"""
-    try:
-        config = {
-            'symbol': f'BINANCE:{symbol}',
-            'interval': '1H',
-            'timezone': 'Etc/UTC',
-            'theme': 'dark',
-            'style': '1',
-            'locale': 'en',
-            'toolbar_bg': '#f1f3f6',
-            'enable_publishing': False,
-            'hide_top_toolbar': False,
-            'hide_legend': False,
-            'save_image': False,
-            'container_id': f'tradingview_{symbol.lower()}',
-            'studies': [
-                'RSI@tv-basicstudies',
-                'MACD@tv-basicstudies',
-                'EMA@tv-basicstudies'
-            ]
+        # Basic health checks
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+            'checks': {
+                'database': check_database_health(),
+                'bot_manager': check_bot_manager_health(),
+                'disk_space': check_disk_space(),
+                'memory_usage': check_memory_usage()
+            }
         }
-        return jsonify({'success': True, 'config': config})
+        
+        # Determine overall status
+        if any(check['status'] != 'ok' for check in health_status['checks'].values()):
+            health_status['status'] = 'degraded'
+            
+        return jsonify(health_status), 200 if health_status['status'] == 'healthy' else 503
+        
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({
+            'status': 'error',
+            'timestamp': datetime.utcnow().isoformat(),
+            'error': str(e)
+        }), 500
+
+def get_db_connection():
+    """Get database connection"""
+    return sqlite3.connect(app.config['DATABASE'])
+
+def check_database_health():
+    """Check database connectivity"""
+    try:
+        conn = get_db_connection()
+        conn.execute('SELECT 1')
+        conn.close()
+        return {'status': 'ok', 'message': 'Database accessible'}
+    except Exception as e:
+        return {'status': 'error', 'message': f'Database error: {str(e)}'}
+
+def check_bot_manager_health():
+    """Check bot manager status"""
+    try:
+        global bot_manager
+        if bot_manager is None:
+            return {'status': 'warning', 'message': 'Bot manager not initialized'}
+        
+        status = bot_manager.get_status()
+        return {'status': 'ok', 'message': f'Bot manager active: {status.get("active", False)}'}
+    except Exception as e:
+        return {'status': 'error', 'message': f'Bot manager error: {str(e)}'}
+
+def check_disk_space():
+    """Check available disk space"""
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage('.')
+        free_percent = (free / total) * 100
+        
+        if free_percent > 20:
+            status = 'ok'
+        elif free_percent > 10:
+            status = 'warning'
+        else:
+            status = 'critical'
+            
+        return {
+            'status': status,
+            'free_percent': round(free_percent, 2),
+            'free_gb': round(free / (1024**3), 2)
+        }
+    except Exception as e:
+        return {'status': 'error', 'message': f'Disk check error: {str(e)}'}
+
+def check_memory_usage():
+    """Check memory usage"""
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        
+        if memory.percent < 80:
+            status = 'ok'
+        elif memory.percent < 90:
+            status = 'warning'
+        else:
+            status = 'critical'
+            
+        return {
+            'status': status,
+            'usage_percent': memory.percent,
+            'available_gb': round(memory.available / (1024**3), 2)
+        }
+    except Exception as e:
+        return {'status': 'error', 'message': f'Memory check error: {str(e)}'}
+
+# System info endpoint
+@app.route('/api/system/info', methods=['GET'])
+def get_system_info():
+    """Get comprehensive system information"""
+    try:
+        import psutil
+        import platform
+        
+        system_info = {
+            'platform': {
+                'system': platform.system(),
+                'release': platform.release(),
+                'version': platform.version(),
+                'machine': platform.machine(),
+                'processor': platform.processor()
+            },
+            'resources': {
+                'cpu_count': psutil.cpu_count(),
+                'cpu_percent': psutil.cpu_percent(interval=1),
+                'memory': {
+                    'total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
+                    'available_gb': round(psutil.virtual_memory().available / (1024**3), 2),
+                    'percent': psutil.virtual_memory().percent
+                },
+                'disk': {
+                    'total_gb': round(psutil.disk_usage('.').total / (1024**3), 2),
+                    'free_gb': round(psutil.disk_usage('.').free / (1024**3), 2),
+                    'percent': round(((psutil.disk_usage('.').total - psutil.disk_usage('.').free) / psutil.disk_usage('.').total) * 100, 2)
+                }
+            },
+            'python': {
+                'version': platform.python_version(),
+                'executable': sys.executable
+            },
+            'process': {
+                'pid': os.getpid(),
+                'uptime_seconds': time.time() - psutil.Process().create_time()
+            },
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+        return jsonify(system_info)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # WebSocket event handlers for new features
 @socketio.on('join_alerts')
@@ -3149,7 +2947,6 @@ def handle_risk_update_request():
     except Exception as e:
         emit('error', {'message': str(e)})
 
-# ...existing code...
 # WebSocket Events
 @socketio.on('connect')
 def handle_connect():
@@ -3179,12 +2976,22 @@ def handle_market_data_request():
 
 if __name__ == '__main__':
     print("🚀 Démarrage de l'interface web AlphaBeta808 Trading")
-    print(f"📊 Dashboard disponible sur: http://localhost:5000")
-    print(f"👤 Identifiants par défaut: admin / admin123")
     
-    # Initialiser la base de données
+    # Get environment configuration
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('HOST', '127.0.0.1')  # Local only by default for security
+    
+    if debug_mode:
+        print("⚠️  WARNING: Running in DEBUG mode - not suitable for production!")
+        print(f"📊 Dashboard disponible sur: http://{host}:{port}")
+        print(f"👤 Identifiants par défaut: admin / admin123")
+    else:
+        print(f"📊 Dashboard disponible sur: https://{host}:{port}")
+        print("🔒 Running in PRODUCTION mode")
+    
     # Initialiser la base de données
     web_interface.db_manager.init_database()
     
     # Démarrer l'application
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host=host, port=port, debug=debug_mode)
