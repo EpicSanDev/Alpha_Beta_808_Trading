@@ -202,6 +202,7 @@ jobs:
     
     - name: Configure kubectl for production
       run: |
+        mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > ~/.kube/config
         chmod 600 ~/.kube/config
     
@@ -276,6 +277,7 @@ jobs:
     
     - name: Configure kubectl
       run: |
+        mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > ~/.kube/config
         chmod 600 ~/.kube/config
     
