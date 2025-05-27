@@ -35,26 +35,31 @@ COPY requirements.txt .
 # Install Python dependencies optimized for Railway
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# First install core dependencies that flask-socketio needs
-RUN pip install --no-cache-dir --timeout=600 \
+# Install dependencies step by step to ensure flask-socketio works
+RUN pip install --no-cache-dir \
     "eventlet>=0.33.0" \
     "bidict>=0.21.0" \
-    "python-engineio>=4.0.0"
+    "python-engineio>=4.7.0" \
+    "python-socketio>=5.8.0"
 
-# Install flask-socketio specifically
-RUN pip install --no-cache-dir --timeout=600 "flask-socketio>=5.3.0"
+# Install flask-socketio with specific version
+RUN pip install --no-cache-dir "flask-socketio==5.3.6"
 
-# Install other critical dependencies
-RUN pip install --no-cache-dir --timeout=600 \
+# Install Flask and related packages
+RUN pip install --no-cache-dir \
     "flask>=2.3.0" \
     "flask-cors>=4.0.0" \
-    "werkzeug>=2.3.0" \
-    "python-dotenv>=0.20.0" \
-    "requests>=2.28.0"
+    "werkzeug>=2.3.0"
 
-# Try to install remaining dependencies from requirements.txt
-RUN pip install --no-cache-dir --timeout=600 -r requirements.txt || \
-    (echo "Some packages failed to install, continuing with core dependencies...")
+# Install other essential packages
+RUN pip install --no-cache-dir \
+    "python-dotenv>=0.20.0" \
+    "requests>=2.28.0" \
+    "pandas>=1.5.0" \
+    "numpy>=1.22.4"
+
+# Try to install remaining packages from requirements.txt (non-critical)
+RUN pip install --no-cache-dir -r requirements.txt || echo "Some optional packages failed"
 
 # Copy application code
 COPY . .

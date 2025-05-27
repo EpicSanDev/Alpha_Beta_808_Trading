@@ -9,5 +9,5 @@ builder = "docker"
 dockerfilePath = "Dockerfile.railway"
 
 [services.deploy]
-startCommand = "python web_interface/app_enhanced.py"
+startCommand = "python railway_startup.py"
 healthcheckPath = "/health"
