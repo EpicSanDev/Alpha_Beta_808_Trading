@@ -189,7 +189,7 @@ jobs:
     if: github.event.inputs.environment == 'production' || github.event_name == 'release'
     environment: 
       name: production
-      url: https://trading.alphabeta808.com
+      url: http://YOUR_SERVER_IP:5000
     
     steps:
     - name: Checkout code
