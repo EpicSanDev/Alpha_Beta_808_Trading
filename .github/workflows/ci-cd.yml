@@ -133,6 +133,20 @@ jobs:
     
     - name: Deploy to Kubernetes
       run: |
+        # Créer le namespace s'il n'existe pas
+        kubectl create namespace alphabeta808-trading --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Vérifier si les déployments existent, sinon les créer
+        if ! kubectl get deployment trading-bot -n alphabeta808-trading &> /dev/null; then
+          echo "Deployment trading-bot not found, applying from k8s manifests..."
+          kubectl apply -f k8s/ -n alphabeta808-trading
+        fi
+        
+        if ! kubectl get deployment trading-web-interface -n alphabeta808-trading &> /dev/null; then
+          echo "Deployment trading-web-interface not found, applying from k8s manifests..."
+          kubectl apply -f k8s/ -n alphabeta808-trading
+        fi
+        
         # Mise à jour de l'image dans les déployments
         kubectl set image deployment/trading-bot \
           trading-bot=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
