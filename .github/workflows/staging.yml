@@ -100,6 +100,7 @@ jobs:
     
     - name: Configure kubectl for staging
       run: |
+        mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
         chmod 600 ~/.kube/config
     
@@ -153,6 +154,7 @@ jobs:
     
     - name: Configure kubectl
       run: |
+        mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
         chmod 600 ~/.kube/config
     
@@ -192,6 +194,7 @@ jobs:
     
     - name: Configure kubectl
       run: |
+        mkdir -p ~/.kube
         echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
         chmod 600 ~/.kube/config
     
