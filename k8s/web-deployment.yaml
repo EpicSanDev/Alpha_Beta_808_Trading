@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: web-interface
-        image: alphabeta808/trading-bot:latest
+        image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/alphabeta808-trading-bot:latest
         ports:
         - containerPort: 5000
           name: http

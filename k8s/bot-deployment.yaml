@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: trading-bot
-        image: alphabeta808/trading-bot:latest
+        image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/alphabeta808-trading-bot:latest
         command: ["python", "live_trading_bot.py"]
         env:
         - name: BINANCE_API_KEY

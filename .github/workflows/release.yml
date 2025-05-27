@@ -1,0 +1,357 @@
+name: Release & Hotfix
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Type of release'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
+        - hotfix
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  REGISTRY: rg.fr-par.scw.cloud/namespace-ecstatic-einstein
+  IMAGE_NAME: alphabeta808-trading-bot
+
+jobs:
+  # Tests complets pour les releases
+  comprehensive-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install all dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r web_interface/requirements.txt
+        pip install pytest pytest-cov flake8 black safety bandit
+    
+    - name: Security scan
+      run: |
+        safety check --json
+        bandit -r . -f json -o bandit-report.json || true
+      continue-on-error: true
+    
+    - name: Code quality checks
+      run: |
+        black --check .
+        flake8 . --max-line-length=127 --extend-ignore=E203,W503
+    
+    - name: Run comprehensive tests
+      run: |
+        python -m pytest tests/ -v --cov=. --cov-report=xml --tb=short
+        python system_check.py
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  # Création du tag de version automatique
+  create-version:
+    runs-on: ubuntu-latest
+    needs: comprehensive-tests
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup Git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+    
+    - name: Calculate next version
+      id: version
+      run: |
+        # Récupérer la dernière version
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "Latest tag: $LATEST_TAG"
+        
+        # Extraire les numéros de version
+        VERSION=${LATEST_TAG#v}
+        IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
+        MAJOR=${VERSION_PARTS[0]:-0}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Calculer la nouvelle version
+        case "${{ github.event.inputs.release_type }}" in
+          "major")
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          "minor")
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          "patch"|"hotfix")
+            PATCH=$((PATCH + 1))
+            ;;
+        esac
+        
+        NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+        echo "New version: $NEW_VERSION"
+        echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        
+        # Créer le tag
+        git tag $NEW_VERSION
+        git push origin $NEW_VERSION
+
+  # Build de l'image de release
+  build-release:
+    runs-on: ubuntu-latest
+    needs: [comprehensive-tests, create-version]
+    if: always() && needs.comprehensive-tests.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Scaleway Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: nologin
+        password: ${{ secrets.SCW_SECRET_KEY }}
+    
+    - name: Extract version info
+      id: version_info
+      run: |
+        if [ "${{ github.event_name }}" == "release" ]; then
+          VERSION=${{ github.event.release.tag_name }}
+        else
+          VERSION=${{ needs.create-version.outputs.version }}
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
+    
+    - name: Build and push release image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version_info.outputs.version }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:stable
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        labels: |
+          org.opencontainers.image.title=AlphaBeta808 Trading Bot
+          org.opencontainers.image.description=Automated cryptocurrency trading bot with ML integration
+          org.opencontainers.image.version=${{ steps.version_info.outputs.version }}
+          org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Déploiement de production
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [build-release, create-version]
+    if: github.event.inputs.environment == 'production' || github.event_name == 'release'
+    environment: 
+      name: production
+      url: https://trading.alphabeta808.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+    
+    - name: Configure kubectl for production
+      run: |
+        echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > ~/.kube/config
+        chmod 600 ~/.kube/config
+    
+    - name: Create backup of current deployment
+      run: |
+        VERSION_INFO="${{ needs.create-version.outputs.version || github.event.release.tag_name }}"
+        
+        # Sauvegarder la configuration actuelle
+        kubectl get deployment trading-bot -o yaml -n alphabeta808-trading > backup-bot-${VERSION_INFO}.yaml
+        kubectl get deployment trading-web-interface -o yaml -n alphabeta808-trading > backup-web-${VERSION_INFO}.yaml
+        
+        # Upload backup (optionnel)
+        echo "Backup created for version $VERSION_INFO"
+    
+    - name: Deploy to production with rolling update
+      run: |
+        VERSION_INFO="${{ needs.create-version.outputs.version || github.event.release.tag_name }}"
+        
+        # Rolling update avec zero-downtime
+        kubectl set image deployment/trading-bot \
+          trading-bot=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION_INFO \
+          -n alphabeta808-trading \
+          --record
+        
+        kubectl set image deployment/trading-web-interface \
+          web-interface=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION_INFO \
+          -n alphabeta808-trading \
+          --record
+        
+        # Attendre le déploiement
+        kubectl rollout status deployment/trading-bot -n alphabeta808-trading --timeout=600s
+        kubectl rollout status deployment/trading-web-interface -n alphabeta808-trading --timeout=600s
+    
+    - name: Verify production deployment
+      run: |
+        # Vérifier que tous les pods sont running
+        kubectl get pods -n alphabeta808-trading
+        
+        # Health check via port-forward
+        kubectl port-forward svc/trading-web-service 8080:5000 -n alphabeta808-trading &
+        sleep 15
+        
+        # Tests de santé
+        curl -f http://localhost:8080/api/status
+        curl -f http://localhost:8080/api/performance
+        
+        echo "✅ Production deployment verified successfully!"
+    
+    - name: Post-deployment monitoring
+      run: |
+        # Configurer des alertes temporaires post-déploiement
+        echo "Setting up post-deployment monitoring..."
+        
+        # Vérifier les métriques pendant 5 minutes
+        for i in {1..10}; do
+          echo "Health check $i/10..."
+          curl -f http://localhost:8080/api/status > /dev/null
+          sleep 30
+        done
+        
+        echo "✅ Post-deployment monitoring completed!"
+
+  # Rollback automatique en cas d'échec
+  rollback:
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: failure()
+    
+    steps:
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+    
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > ~/.kube/config
+        chmod 600 ~/.kube/config
+    
+    - name: Rollback deployment
+      run: |
+        echo "🚨 Deployment failed, initiating rollback..."
+        
+        kubectl rollout undo deployment/trading-bot -n alphabeta808-trading
+        kubectl rollout undo deployment/trading-web-interface -n alphabeta808-trading
+        
+        kubectl rollout status deployment/trading-bot -n alphabeta808-trading --timeout=300s
+        kubectl rollout status deployment/trading-web-interface -n alphabeta808-trading --timeout=300s
+        
+        echo "✅ Rollback completed successfully!"
+
+  # Notification des résultats
+  notify-teams:
+    runs-on: ubuntu-latest
+    needs: [comprehensive-tests, build-release, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Notify via Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#releases'
+        text: |
+          🚀 AlphaBeta808 Trading Bot Release:
+          
+          Version: ${{ needs.create-version.outputs.version || github.event.release.tag_name }}
+          Type: ${{ github.event.inputs.release_type || 'release' }}
+          
+          Status:
+          - Tests: ${{ needs.comprehensive-tests.result }}
+          - Build: ${{ needs.build-release.result }}
+          - Deploy: ${{ needs.deploy-production.result }}
+          
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: env.SLACK_WEBHOOK_URL != ''
+    
+    - name: Create GitHub Release Notes
+      if: github.event_name == 'workflow_dispatch' && needs.deploy-production.result == 'success'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ needs.create-version.outputs.version }}
+        release_name: Release ${{ needs.create-version.outputs.version }}
+        body: |
+          ## AlphaBeta808 Trading Bot ${{ needs.create-version.outputs.version }}
+          
+          ### 🚀 Changes in this release
+          - Automatic release created via GitHub Actions
+          - Release type: ${{ github.event.inputs.release_type }}
+          
+          ### 📊 Deployment Status
+          - ✅ Tests passed
+          - ✅ Security scan completed
+          - ✅ Production deployment successful
+          
+          ### 🔧 Technical Details
+          - Docker Image: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.create-version.outputs.version }}`
+          - Commit SHA: `${{ github.sha }}`
+          - Build Date: `${{ github.event.head_commit.timestamp }}`
+          
+          ### 🏃‍♂️ Quick Start
+          ```bash
+          # Pull latest image
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.create-version.outputs.version }}
+          
+          # Deploy with Kubernetes
+          kubectl set image deployment/trading-bot trading-bot=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.create-version.outputs.version }}
+          ```
+        draft: false
+        prerelease: ${{ github.event.inputs.release_type == 'hotfix' }}
