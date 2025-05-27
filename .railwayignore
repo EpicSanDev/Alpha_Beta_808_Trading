@@ -1,0 +1,67 @@
+# Railway ignore file - exclude unnecessary files from build
+
+# Documentation
+DOCS/
+*.md
+README*
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# Development files
+.env*
+.vscode/
+.idea/
+*.log
+
+# Temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Other deployment files
+docker-compose*.yml
+Dockerfile
+k8s/
+monitoring/
+
+# Backup files
+backups/
+*.backup
+*.bak
+
+# Log files
+logs/*.log
+*.log
+
+# Results and cache
+results/
+backtest_results/
+models_store/
+optimized_models/
+
+# Scripts not needed in production
+scripts/
+examples/
+run_tests.sh
+deploy_*.sh
+test_*.sh

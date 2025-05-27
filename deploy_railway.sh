@@ -51,18 +51,17 @@ check_prerequisites() {
     fi
     
     # Vérifier les fichiers Railway
-    if [ -f "railway.toml" ]; then
-        echo -e "${GREEN}✅ railway.toml présent${NC}"
-    else
-        echo -e "${RED}❌ railway.toml manquant${NC}"
-        exit 1
-    fi
-    
     if [ -f "Dockerfile.railway" ]; then
         echo -e "${GREEN}✅ Dockerfile.railway présent${NC}"
     else
         echo -e "${RED}❌ Dockerfile.railway manquant${NC}"
         exit 1
+    fi
+    
+    if [ -f ".railwayignore" ]; then
+        echo -e "${GREEN}✅ .railwayignore présent${NC}"
+    else
+        echo -e "${YELLOW}⚠️  .railwayignore manquant (optionnel)${NC}"
     fi
     
     if [ -f "Procfile" ]; then
@@ -121,6 +120,7 @@ deploy_guide() {
     echo "   → Cliquez 'New Project'"
     echo "   → Sélectionnez 'Deploy from GitHub repo'"
     echo "   → Choisissez votre repository AlphaBeta808Trading"
+    echo "   → Railway détectera automatiquement le Dockerfile.railway"
     echo ""
     echo -e "${BLUE}3. Configurer les variables d'environnement${NC}"
     echo "   → Allez dans Settings → Variables"
@@ -139,7 +139,8 @@ deploy_guide() {
     echo "   - TELEGRAM_ENABLED=false"
     echo ""
     echo -e "${BLUE}4. Déployer${NC}"
-    echo "   → Railway détectera automatiquement la configuration"
+    echo "   → Railway détecte automatiquement les projets Docker"
+    echo "   → Aucun fichier de configuration supplémentaire nécessaire"
     echo "   → Le déploiement commencera automatiquement"
     echo "   → Surveillez les logs de build"
     echo ""

@@ -7,10 +7,11 @@ Votre bot de trading AlphaBeta808 est maintenant **prêt pour le déploiement su
 ### 📁 Fichiers créés/modifiés :
 
 #### Configuration Railway
-- ✅ `railway.toml` - Configuration principale Railway
 - ✅ `Dockerfile.railway` - Dockerfile optimisé pour Railway
 - ✅ `Procfile` - Commande de démarrage du service
-- ✅ `.env.railway` - Template des variables d'environnement
+- ✅ `.env.railway` - Template des variables d'environnement  
+- ✅ `.railwayignore` - Optimisation du build Railway
+- ✅ `RAILWAY_CONFIG.md` - Instructions de configuration
 
 #### Documentation
 - ✅ `RAILWAY_DEPLOYMENT.md` - Guide complet de déploiement

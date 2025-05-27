@@ -66,9 +66,12 @@ openssl rand -base64 32
 
 ### Step 4: Deploy
 
-1. Railway will automatically build using `Dockerfile.railway`
-2. The web interface will be available at your Railway-generated URL
-3. Health check endpoint: `https://your-app.railway.app/health`
+1. Railway will automatically detect and build using `Dockerfile.railway`
+2. Railway auto-detection works without additional configuration files
+3. The web interface will be available at your Railway-generated URL
+4. Health check endpoint: `https://your-app.railway.app/health`
+
+**Note**: Railway v2 automatically detects Docker projects. No `railway.toml` needed!
 
 ## 🔍 Post-Deployment Verification
 
