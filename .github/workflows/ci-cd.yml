@@ -5,12 +5,15 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch: # Permet de déclencher manuellement
   release:
     types: [ created ]
 
 env:
-  REGISTRY: rg.fr-par.scw.cloud/namespace-ecstatic-einstein
+  REGISTRY: rg.fr-par.scw.cloud
+  NAMESPACE: namespace-ecstatic-einstein
   IMAGE_NAME: alphabeta808-trading-bot
+  K8S_NAMESPACE: alphabeta808-trading
 
 jobs:
   # Tests et vérifications
@@ -87,13 +90,14 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix={{branch}}-
     
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -107,7 +111,144 @@ jobs:
         cache-to: type=gha,mode=max
         platforms: linux/amd64
 
-  # Déploiement automatique (optionnel)
+  # Déploiement vers staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+        
+    - name: Set up Kubernetes config
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > ~/.kube/config
+        chmod 600 ~/.kube/config
+        
+    - name: Create namespace if not exists
+      run: |
+        kubectl create namespace ${{ env.K8S_NAMESPACE }}-staging --dry-run=client -o yaml | kubectl apply -f -
+        
+    - name: Create/Update secrets from GitHub Secrets
+      run: |
+        kubectl create secret generic trading-secrets \
+          --from-literal=binance-api-key="${{ secrets.BINANCE_API_KEY_STAGING }}" \
+          --from-literal=binance-api-secret="${{ secrets.BINANCE_API_SECRET_STAGING }}" \
+          --from-literal=webhook-secret="${{ secrets.WEBHOOK_SECRET }}" \
+          --from-literal=web-admin-user="${{ secrets.WEB_ADMIN_USER }}" \
+          --from-literal=web-admin-password="${{ secrets.WEB_ADMIN_PASSWORD }}" \
+          --from-literal=database-url="${{ secrets.DATABASE_URL_STAGING }}" \
+          --from-literal=smtp-password="${{ secrets.SMTP_PASSWORD }}" \
+          --namespace=${{ env.K8S_NAMESPACE }}-staging \
+          --dry-run=client -o yaml | kubectl apply -f -
+          
+    - name: Deploy to staging
+      run: |
+        # Copier les manifests et les adapter pour staging
+        cp -r k8s/ k8s-staging/
+        
+        # Modifier les namespaces pour staging
+        sed -i "s|namespace: alphabeta808-trading|namespace: ${{ env.K8S_NAMESPACE }}-staging|g" k8s-staging/*.yaml
+        
+        # Mettre à jour les images avec le tag de la branche
+        IMAGE_TAG=$(echo "${{ github.ref_name }}-${{ github.sha }}" | head -c 12)
+        sed -i "s|image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/alphabeta808-trading-bot:latest|image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}|g" k8s-staging/*.yaml
+        
+        # Appliquer les manifests
+        kubectl apply -f k8s-staging/namespace.yaml
+        kubectl apply -f k8s-staging/configmap.yaml
+        kubectl apply -f k8s-staging/pvc.yaml
+        kubectl apply -f k8s-staging/rbac.yaml
+        kubectl apply -f k8s-staging/services.yaml
+        kubectl apply -f k8s-staging/bot-deployment.yaml
+        kubectl apply -f k8s-staging/web-deployment.yaml
+        
+    - name: Wait for deployment
+      run: |
+        kubectl rollout status deployment/trading-bot -n ${{ env.K8S_NAMESPACE }}-staging --timeout=300s
+        kubectl rollout status deployment/trading-web-interface -n ${{ env.K8S_NAMESPACE }}-staging --timeout=300s
+
+  # Déploiement vers production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+        
+    - name: Set up Kubernetes config
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > ~/.kube/config
+        chmod 600 ~/.kube/config
+        
+    - name: Create namespace if not exists
+      run: |
+        kubectl create namespace ${{ env.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+        
+    - name: Create/Update secrets from GitHub Secrets
+      run: |
+        kubectl create secret generic trading-secrets \
+          --from-literal=binance-api-key="${{ secrets.BINANCE_API_KEY_PRODUCTION }}" \
+          --from-literal=binance-api-secret="${{ secrets.BINANCE_API_SECRET_PRODUCTION }}" \
+          --from-literal=webhook-secret="${{ secrets.WEBHOOK_SECRET }}" \
+          --from-literal=web-admin-user="${{ secrets.WEB_ADMIN_USER }}" \
+          --from-literal=web-admin-password="${{ secrets.WEB_ADMIN_PASSWORD }}" \
+          --from-literal=database-url="${{ secrets.DATABASE_URL_PRODUCTION }}" \
+          --from-literal=smtp-password="${{ secrets.SMTP_PASSWORD }}" \
+          --namespace=${{ env.K8S_NAMESPACE }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+          
+    - name: Deploy to production
+      run: |
+        # Mettre à jour les images avec le tag latest
+        sed -i "s|image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/alphabeta808-trading-bot:latest|image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:latest|g" k8s/*.yaml
+        
+        # Appliquer les manifests
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/configmap.yaml
+        kubectl apply -f k8s/pvc.yaml
+        kubectl apply -f k8s/rbac.yaml
+        kubectl apply -f k8s/services.yaml
+        kubectl apply -f k8s/bot-deployment.yaml
+        kubectl apply -f k8s/web-deployment.yaml
+        kubectl apply -f k8s/hpa.yaml
+        kubectl apply -f k8s/pdb.yaml
+        kubectl apply -f k8s/monitoring.yaml
+        
+    - name: Wait for deployment
+      run: |
+        kubectl rollout status deployment/trading-bot -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+        kubectl rollout status deployment/trading-web-interface -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+        
+    - name: Run post-deployment health checks
+      run: |
+        # Attendre que les pods soient prêts
+        kubectl wait --for=condition=ready pod -l app=trading-bot -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=trading-web-interface -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+        
+        # Vérifier les logs pour des erreurs critiques
+        kubectl logs -l app=trading-bot -n ${{ env.K8S_NAMESPACE }} --tail=50 | grep -i "error\|exception\|critical" || true
+
+  # Déploiement automatique (ancien - à supprimer après migration)
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-push
@@ -168,23 +309,16 @@ jobs:
   # Notification de déploiement
   notify:
     runs-on: ubuntu-latest
-    needs: [test, build-and-push, deploy]
+    needs: [test, build-and-push, deploy-staging, deploy-production]
     if: always()
     
     steps:
     - name: Notify deployment status
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        channel: '#deployments'
-        text: |
-          AlphaBeta808 Trading Bot deployment:
-          - Tests: ${{ needs.test.result }}
-          - Build: ${{ needs.build-and-push.result }}
-          - Deploy: ${{ needs.deploy.result }}
-          
-          Branch: ${{ github.ref_name }}
-          Commit: ${{ github.sha }}
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      if: env.SLACK_WEBHOOK_URL != ''
+      run: |
+        echo "🚀 AlphaBeta808 Trading Bot Deployment Status:"
+        echo "- Tests: ${{ needs.test.result }}"
+        echo "- Build: ${{ needs.build-and-push.result }}"
+        echo "- Staging Deploy: ${{ needs.deploy-staging.result }}"
+        echo "- Production Deploy: ${{ needs.deploy-production.result }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"
