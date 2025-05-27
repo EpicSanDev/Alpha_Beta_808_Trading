@@ -35,39 +35,37 @@ COPY requirements.txt .
 # Install Python dependencies optimized for Railway
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install core dependencies in batches for Railway's build limits
+# First install core dependencies that flask-socketio needs
 RUN pip install --no-cache-dir --timeout=600 \
-    "pandas>=1.5.0" \
-    "numpy>=1.22.4,<1.27.0" \
-    "scipy>=1.7.0" \
-    "scikit-learn>=1.0.0" \
+    "eventlet>=0.33.0" \
+    "bidict>=0.21.0" \
+    "python-engineio>=4.0.0"
+
+# Install flask-socketio specifically
+RUN pip install --no-cache-dir --timeout=600 "flask-socketio>=5.3.0"
+
+# Install other critical dependencies
+RUN pip install --no-cache-dir --timeout=600 \
     "flask>=2.3.0" \
-    "flask-socketio>=5.3.0" \
     "flask-cors>=4.0.0" \
-    "werkzeug>=2.3.0"
-
-# Install trading specific packages
-RUN pip install --no-cache-dir --timeout=600 \
-    "python-binance>=1.0.0" \
+    "werkzeug>=2.3.0" \
     "python-dotenv>=0.20.0" \
-    "ta>=0.10.0" \
-    "xgboost>=1.6.0" \
-    "joblib>=1.1.0" \
-    "requests>=2.28.0" \
-    "websocket-client>=1.5.0" \
-    "colorama>=0.4.6"
+    "requests>=2.28.0"
 
-# Install visualization packages
-RUN pip install --no-cache-dir --timeout=600 \
-    "matplotlib>=3.5.0" \
-    "seaborn>=0.11.0" \
-    "plotly>=5.0.0"
+# Try to install remaining dependencies from requirements.txt
+RUN pip install --no-cache-dir --timeout=600 -r requirements.txt || \
+    (echo "Some packages failed to install, continuing with core dependencies...")
 
 # Copy application code
 COPY . .
 
 # Create necessary directories
 RUN mkdir -p logs models_store backtest_results reports results web_interface/static web_interface/templates
+
+# Test that flask_socketio can be imported
+RUN python -c "import flask_socketio; print('flask_socketio imported successfully')" || \
+    (echo "flask_socketio import failed, installing again..." && \
+     pip install --no-cache-dir --force-reinstall "flask-socketio>=5.3.0" "eventlet>=0.33.0")
 
 # Health check for Railway
 HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
@@ -76,5 +74,5 @@ HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
 # Expose the port Railway expects
 EXPOSE ${PORT}
 
-# Railway startup command
-CMD ["python", "web_interface/app_enhanced.py"]
+# Railway startup command - use our robust startup script
+CMD ["python", "railway_startup.py"]

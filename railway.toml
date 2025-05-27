@@ -1,0 +1,13 @@
+# Railway Configuration for AlphaBeta808 Trading Bot
+# Minimalist configuration for Railway v2
+
+[[services]]
+name = "alphabeta808-trading"
+
+[services.build]
+builder = "docker"
+dockerfilePath = "Dockerfile.railway"
+
+[services.deploy]
+startCommand = "python web_interface/app_enhanced.py"
+healthcheckPath = "/health"
