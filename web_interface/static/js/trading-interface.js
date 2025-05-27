@@ -461,9 +461,13 @@ class TradingInterface {
         try {
             // Load trading mode
             const modeResponse = await this.apiCall('/api/trading/mode');
-            if (modeResponse.success) {
-                this.currentMode = modeResponse.data.mode;
+            if (modeResponse.success && modeResponse.mode) { // Vérification supplémentaire pour modeResponse.mode
+                this.currentMode = modeResponse.mode.is_live_trading ? 'live' : 'paper';
                 this.updateTradingModeUI(this.currentMode);
+            } else if (modeResponse.success) { // Cas où modeResponse.mode est manquant mais success est true
+                console.error('API success but mode data is missing:', modeResponse);
+                // Fallback ou gestion d'erreur si nécessaire, pour l'instant on garde le mode par défaut.
+                this.updateTradingModeUI(this.currentMode); // Met à jour l'UI avec le mode actuel (défaut)
             }
             
             // Load initial portfolio data
@@ -504,6 +508,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = TradingInterface;
-}
+// if (typeof module !== 'undefined' && module.exports) {
+//     module.exports = TradingInterface;
+// }

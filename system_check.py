@@ -80,8 +80,9 @@ def test_basic_functionality():
         # Create dummy predictions for testing
         import numpy as np
         predictions = np.random.choice([0, 1], size=len(data_with_features))
-        signals = signal_gen.generate_signals_from_predictions(
+        signals = signal_gen.generate_base_signals_from_predictions(
             predictions, 
+            symbol="TESTUSDT",
             threshold=0.5,
             prediction_type='class'
         )

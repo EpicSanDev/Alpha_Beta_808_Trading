@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-web-interface
+  namespace: alphabeta808-trading
+  labels:
+    app: trading-web-interface
+    component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trading-web-interface
+  template:
+    metadata:
+      labels:
+        app: trading-web-interface
+        component: web
+    spec:
+      containers:
+      - name: web-interface
+        image: alphabeta808/trading-bot:latest
+        ports:
+        - containerPort: 5000
+          name: http
+        command: ["python", "web_interface/app_enhanced.py"]
+        env:
+        - name: BINANCE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: binance-api-key
+        - name: BINANCE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: binance-api-secret
+        - name: WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: webhook-secret
+        - name: WEB_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: web-admin-user
+        - name: WEB_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: web-admin-password
+        - name: FLASK_ENV
+          value: "production"
+        - name: PYTHONPATH
+          value: "/app/src:/app"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/trader_config.json
+          subPath: trader_config.json
+        - name: data-volume
+          mountPath: /app/backtest_results
+        - name: models-volume
+          mountPath: /app/models_store
+        - name: logs-volume
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: trading-config
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: trading-data-pvc
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: trading-models-pvc
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: trading-logs-pvc
+      restartPolicy: Always

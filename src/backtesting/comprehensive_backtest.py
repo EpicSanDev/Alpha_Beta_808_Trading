@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import json
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Union
 import logging
 import warnings
 from pathlib import Path
@@ -31,13 +31,18 @@ from src.feature_engineering.technical_features import (
     calculate_macd, calculate_bollinger_bands,
     calculate_price_momentum, calculate_volume_features
 )
+# Ajout pour les features de futures
+from src.feature_engineering.futures_features import add_all_futures_features
 from src.modeling.models import prepare_data_for_model, train_model, load_model_and_predict
-from src.signal_generation.signal_generator import generate_signals_from_predictions, allocate_capital_simple
+from src.signal_generation.signal_generator import generate_base_signals_from_predictions
 from src.execution.simulator import BacktestSimulator
 from src.core.performance_analyzer import BacktestAnalyzer
 from src.validation.walk_forward import WalkForwardValidator
 from src.acquisition.preprocessing_utils import handle_missing_values_column
 from src.acquisition.preprocessing import normalize_min_max
+
+# Import pour les métriques financières avancées
+from src.backtesting.financial_metrics import calculate_portfolio_metrics
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -83,7 +88,8 @@ class ComprehensiveBacktester:
                 "symbols": ["BTCUSDT", "ETHUSDT", "ADAUSDT"],
                 "intervals": ["1d", "4h"],
                 "lookback_days": 1095,  # 3 ans
-                "use_random_data": False
+                "use_random_data": False,
+                "use_futures_features": True # Nouveau paramètre pour contrôler l'utilisation des features futures
             },
             "model_settings": {
                 "models_to_test": [
@@ -138,7 +144,8 @@ class ComprehensiveBacktester:
     
     def run_comprehensive_backtest(self, test_name: str = None) -> Dict[str, Any]:
         """
-        Lance un backtest complet avec tous les modèles et configurations
+        Lance un backtest complet avec tous les modèles et configurations,
+        potentiellement en deux passes (avec et sans features de futures).
         
         Args:
             test_name: Nom optionnel pour ce test
@@ -146,49 +153,100 @@ class ComprehensiveBacktester:
         Returns:
             Dict avec tous les résultats du backtest
         """
-        test_name = test_name or f"backtest_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        logger.info(f"🚀 Démarrage du backtest complet: {test_name}")
+        base_test_name = test_name or f"backtest_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        logger.info(f"🚀 Démarrage du cycle de backtests complets: {base_test_name}")
+
+        original_use_futures_features = self.config['data_settings'].get('use_futures_features', True)
+        all_final_reports = {}
+
+        # Passe 1: Baseline (sans features de futures)
+        logger.info("--- PASS 1: BASELINE (SANS FEATURES FUTURES) ---")
+        self.config['data_settings']['use_futures_features'] = False
+        test_name_baseline = f"{base_test_name}_baseline"
         
-        # 1. Acquisition et préparation des données
-        logger.info("📊 Acquisition des données...")
-        market_data = self._prepare_market_data()
+        logger.info("📊 Acquisition des données (Baseline)...")
+        market_data_baseline = self._prepare_market_data()
         
-        if market_data.empty:
-            logger.error("❌ Aucune donnée de marché disponible")
+        if market_data_baseline.empty:
+            logger.error("❌ Aucune donnée de marché disponible pour la baseline")
+            # Continuer potentiellement avec la passe "avec features" si original_use_futures_features est True
+        else:
+            logger.info("🔧 Feature Engineering (Baseline)...")
+            features_data_baseline = self._engineer_features(market_data_baseline) # _engineer_features respectera le flag de config
+            
+            logger.info("🤖 Tests multi-modèles (Baseline)...")
+            model_results_baseline = self._run_multi_model_tests(features_data_baseline, test_name_baseline)
+            
+            if self.config['model_settings']['walk_forward_validation']:
+                logger.info("📈 Validation Walk-Forward (Baseline)...")
+                walk_forward_results_baseline = self._run_walk_forward_validation(features_data_baseline)
+                model_results_baseline['walk_forward'] = walk_forward_results_baseline
+            
+            if self.config['model_settings']['ensemble_mode']:
+                logger.info("🎯 Tests d'ensemble (Baseline)...")
+                ensemble_results_baseline = self._run_ensemble_tests(features_data_baseline, test_name_baseline)
+                model_results_baseline['ensemble'] = ensemble_results_baseline
+            
+            logger.info("📊 Analyse comparative (Baseline)...")
+            comparative_analysis_baseline = self._run_comparative_analysis(model_results_baseline, features_data_baseline)
+            
+            logger.info("📝 Génération du rapport final (Baseline)...")
+            final_report_baseline = self._generate_comprehensive_report(
+                model_results_baseline, comparative_analysis_baseline, test_name_baseline
+            )
+            all_final_reports['baseline'] = final_report_baseline
+            logger.info(f"✅ Backtest Baseline terminé: {test_name_baseline}")
+
+        # Passe 2: Avec features de futures (si configuré ou différent de la baseline)
+        if original_use_futures_features:
+            logger.info("--- PASS 2: AVEC FEATURES FUTURES ---")
+            self.config['data_settings']['use_futures_features'] = True # S'assurer que c'est True
+            test_name_with_futures = f"{base_test_name}_with_futures"
+
+            logger.info("📊 Acquisition des données (Avec Futures)...")
+            market_data_with_futures = self._prepare_market_data() # Peut être les mêmes données brutes
+            
+            if market_data_with_futures.empty:
+                logger.error("❌ Aucune donnée de marché disponible pour le test avec features futures")
+            else:
+                logger.info("🔧 Feature Engineering (Avec Futures)...")
+                features_data_with_futures = self._engineer_features(market_data_with_futures)
+                
+                logger.info("🤖 Tests multi-modèles (Avec Futures)...")
+                model_results_with_futures = self._run_multi_model_tests(features_data_with_futures, test_name_with_futures)
+                
+                if self.config['model_settings']['walk_forward_validation']:
+                    logger.info("📈 Validation Walk-Forward (Avec Futures)...")
+                    walk_forward_results_with_futures = self._run_walk_forward_validation(features_data_with_futures)
+                    model_results_with_futures['walk_forward'] = walk_forward_results_with_futures
+                
+                if self.config['model_settings']['ensemble_mode']:
+                    logger.info("🎯 Tests d'ensemble (Avec Futures)...")
+                    ensemble_results_with_futures = self._run_ensemble_tests(features_data_with_futures, test_name_with_futures)
+                    model_results_with_futures['ensemble'] = ensemble_results_with_futures
+                
+                logger.info("📊 Analyse comparative (Avec Futures)...")
+                comparative_analysis_with_futures = self._run_comparative_analysis(model_results_with_futures, features_data_with_futures)
+                
+                logger.info("📝 Génération du rapport final (Avec Futures)...")
+                final_report_with_futures = self._generate_comprehensive_report(
+                    model_results_with_futures, comparative_analysis_with_futures, test_name_with_futures
+                )
+                all_final_reports['with_futures'] = final_report_with_futures
+                logger.info(f"✅ Backtest Avec Features Futures terminé: {test_name_with_futures}")
+        
+        # Restaurer la configuration originale
+        self.config['data_settings']['use_futures_features'] = original_use_futures_features
+        
+        if not all_final_reports:
+            logger.error("❌ Aucun backtest n'a pu être exécuté.")
             return {}
-        
-        # 2. Feature Engineering
-        logger.info("🔧 Feature Engineering...")
-        features_data = self._engineer_features(market_data)
-        
-        # 3. Tests multi-modèles
-        logger.info("🤖 Tests multi-modèles...")
-        model_results = self._run_multi_model_tests(features_data, test_name)
-        
-        # 4. Validation Walk-Forward
-        if self.config['model_settings']['walk_forward_validation']:
-            logger.info("📈 Validation Walk-Forward...")
-            walk_forward_results = self._run_walk_forward_validation(features_data)
-            model_results['walk_forward'] = walk_forward_results
-        
-        # 5. Tests d'ensemble
-        if self.config['model_settings']['ensemble_mode']:
-            logger.info("🎯 Tests d'ensemble...")
-            ensemble_results = self._run_ensemble_tests(features_data, test_name)
-            model_results['ensemble'] = ensemble_results
-        
-        # 6. Analyse comparative
-        logger.info("📊 Analyse comparative...")
-        comparative_analysis = self._run_comparative_analysis(model_results, features_data)
-        
-        # 7. Génération du rapport final
-        logger.info("📝 Génération du rapport final...")
-        final_report = self._generate_comprehensive_report(
-            model_results, comparative_analysis, test_name
-        )
-        
-        logger.info(f"✅ Backtest complet terminé: {test_name}")
-        return final_report
+
+        # Pour l'instant, retourner le rapport "avec futures" s'il existe, sinon la baseline, ou un rapport combiné plus tard.
+        # L'objectif est d'avoir les deux jeux de résultats.
+        # Une amélioration future serait de fusionner intelligemment ces rapports.
+        logger.info(f"✅ Cycle de backtests complets terminé pour: {base_test_name}")
+        return all_final_reports # Retourne un dict avec 'baseline' et/ou 'with_futures'
     
     def _prepare_market_data(self) -> pd.DataFrame:
         """Prépare les données de marché selon la configuration"""
@@ -321,8 +379,31 @@ class ComprehensiveBacktester:
                     group = calculate_volume_features(
                         group, volume_col='volume', price_col='close', windows=[10, 20]
                     )
-                
-                # Supprimer les NaN
+
+                # Ajout des caractéristiques de futures
+                if self.config['data_settings'].get('use_futures_features', False): # Lire le paramètre de configuration
+                    # S'assurer que les colonnes requises sont présentes.
+                    # Les noms de colonnes par défaut dans add_all_futures_features correspondent
+                    # à ceux attendus après le prétraitement.
+                    required_futures_cols = ['open_interest', 'funding_rate', 'basis', 'volume', 'close']
+                    if all(col in group.columns for col in required_futures_cols):
+                        logger.info(f"📈 Ajout des caractéristiques de futures pour {symbol} ({interval})...")
+                        group = add_all_futures_features(
+                            group,
+                            open_interest_col='open_interest', # Nom attendu après prétraitement
+                            funding_rate_col='funding_rate',   # Nom attendu après prétraitement
+                            basis_col='basis',                 # Nom attendu après prétraitement
+                            volume_col='volume',               # Volume des klines, utilisé aussi pour OI/Volume
+                            price_col='close'                  # Prix de clôture pour normalisations etc.
+                            # Les fenêtres par défaut seront utilisées, peuvent être configurées si besoin
+                        )
+                    else:
+                        missing_cols = [col for col in required_futures_cols if col not in group.columns]
+                        logger.warning(f"⚠️ Colonnes manquantes pour les features de futures pour {symbol} ({interval}): {missing_cols}. Ces features ne seront pas ajoutées.")
+                else:
+                    logger.info(f"📉 Les caractéristiques de futures ne sont pas activées pour {symbol} ({interval}).")
+
+                # Supprimer les NaN après toutes les features
                 group = group.dropna()
                 
                 if not group.empty:
@@ -414,6 +495,12 @@ class ComprehensiveBacktester:
                     
                 except Exception as e:
                     logger.error(f"  ❌ Erreur avec {model_type} pour {symbol}: {e}")
+                    symbol_results[model_type] = {
+                        'training_metrics': {},
+                        'predictions': np.array([]),
+                        'signals': pd.Series([]),
+                        'backtest_results': {}
+                    }
                     continue
             
             results[symbol] = symbol_results
@@ -434,18 +521,22 @@ class ComprehensiveBacktester:
             logger.warning("Aucune prédiction valide, génération de signaux HOLD par défaut")
             return pd.Series(['HOLD'] * len(predictions))
         
-        signals = pd.Series(['HOLD'] * len(predictions))
+        # Initialiser les signaux
+        signals = ['HOLD'] * len(predictions)
         
         # Seuils adaptatifs basés sur les percentiles des valeurs valides
         upper_threshold = np.percentile(valid_predictions, 75)  # Top 25% -> BUY
         lower_threshold = np.percentile(valid_predictions, 25)  # Bottom 25% -> SELL
         
-        # Appliquer les seuils seulement aux prédictions valides
-        valid_mask = ~np.isnan(predictions)
-        signals[valid_mask & (predictions >= upper_threshold)] = 'BUY'
-        signals[valid_mask & (predictions <= lower_threshold)] = 'SELL'
+        # Appliquer les seuils en utilisant l'indexation directe pour éviter les problèmes d'index
+        for i in range(len(predictions)):
+            if not np.isnan(predictions[i]):
+                if predictions[i] >= upper_threshold:
+                    signals[i] = 'BUY'
+                elif predictions[i] <= lower_threshold:
+                    signals[i] = 'SELL'
         
-        return signals
+        return pd.Series(signals)
     
     def _run_trading_simulation(self, market_data: pd.DataFrame, signals: pd.Series, 
                               symbol: str, model_type: str) -> Dict[str, Any]:
@@ -455,33 +546,44 @@ class ComprehensiveBacktester:
             # Préparer les données pour le simulateur
             market_data_sim = market_data.copy()
             market_data_sim = market_data_sim.sort_values('timestamp').set_index('timestamp')
+            if not market_data_sim.index.is_unique:
+                logger.warning(f"Index de market_data_sim non unique pour {symbol} - {model_type}. Doublons supprimés (en gardant le premier).")
+                market_data_sim = market_data_sim[~market_data_sim.index.duplicated(keep='first')]
             
-            # Créer le DataFrame des signaux
+            # Créer le DataFrame des signaux avec alignement strict
             timestamps = market_data_sim.index
-            signals_trimmed = signals[:len(timestamps)]
+            min_length = min(len(timestamps), len(signals))
+            
+            # Tronquer les deux à la même longueur
+            timestamps_aligned = timestamps[:min_length]
+            signals_aligned = signals.iloc[:min_length] if hasattr(signals, 'iloc') else signals[:min_length]
             
             # Remplacer les valeurs NaN dans les signaux par 'HOLD'
             signals_cleaned = []
-            for sig in signals_trimmed:
+            for sig in signals_aligned:
                 if pd.isna(sig) or sig == 'nan' or str(sig).lower() == 'nan':
                     signals_cleaned.append('HOLD')
                 else:
-                    signals_cleaned.append(sig)
+                    signals_cleaned.append(str(sig))
+            
+            # S'assurer que market_data_sim est aussi aligné
+            market_data_sim = market_data_sim.iloc[:min_length]
             
             signals_df = pd.DataFrame({
                 'signal': signals_cleaned,
-                'position_to_allocate': [
+                'nominal_value_to_trade': [
                     self.config['strategy_settings']['initial_capital'] * 
                     self.config['strategy_settings']['risk_per_trade'] 
                     if sig in ['BUY', 'SELL'] else 0 
                     for sig in signals_cleaned
                 ]
-            }, index=timestamps)
+            }, index=timestamps_aligned)
             
             # Lancer la simulation
             simulator = BacktestSimulator(
                 initial_capital=self.config['strategy_settings']['initial_capital'],
-                market_data=market_data_sim
+                market_data=market_data_sim,
+                asset_symbol=symbol # Ajout du symbole de l'actif
             )
             
             simulator.run_simulation(signals_df)
@@ -507,121 +609,86 @@ class ComprehensiveBacktester:
             logger.error(f"Erreur lors de la simulation pour {symbol} - {model_type}: {e}")
             return {}
     
-    def _calculate_performance_metrics(self, portfolio_history, 
-                                     trade_history, 
+    def _calculate_performance_metrics(self, portfolio_history: Union[List[Dict], pd.DataFrame],
+                                     trade_history: Union[List[Dict], pd.DataFrame],
                                      market_data: pd.DataFrame) -> Dict[str, float]:
-        """Calcule des métriques de performance avancées"""
+        """
+        Calcule des métriques de performance avancées en utilisant financial_metrics.calculate_portfolio_metrics.
+        """
         
-        # Convertir en DataFrame si nécessaire
         if isinstance(portfolio_history, list):
             if not portfolio_history:
+                logger.warning("Historique de portefeuille vide, impossible de calculer les métriques.")
                 return {}
             portfolio_df = pd.DataFrame(portfolio_history)
         elif isinstance(portfolio_history, pd.DataFrame):
             if portfolio_history.empty:
+                logger.warning("DataFrame de l'historique de portefeuille vide.")
                 return {}
             portfolio_df = portfolio_history.copy()
         else:
+            logger.error(f"Type d'historique de portefeuille non supporté: {type(portfolio_history)}")
             return {}
+
+        if 'timestamp' in portfolio_df.columns: # S'assurer que le timestamp est l'index si ce n'est pas déjà le cas
+            portfolio_df = portfolio_df.set_index('timestamp')
+
+
+        trades_df = None
+        if isinstance(trade_history, list):
+            if trade_history:
+                trades_df = pd.DataFrame(trade_history)
+        elif isinstance(trade_history, pd.DataFrame):
+            trades_df = trade_history.copy()
         
-        # Vérifier que les colonnes nécessaires existent
-        if 'portfolio_value' not in portfolio_df.columns:
-            logger.warning("Colonne 'portfolio_value' manquante dans l'historique du portefeuille")
-            return {}
-        
-        initial_capital = self.config['strategy_settings']['initial_capital']
-        risk_free_rate = self.config['performance_settings']['risk_free_rate']
-        
-        # Métriques de base
-        final_value = portfolio_df['portfolio_value'].iloc[-1]
-        total_return = (final_value - initial_capital) / initial_capital
-        
-        # Rendements quotidiens
-        portfolio_df['daily_return'] = portfolio_df['portfolio_value'].pct_change()
-        daily_returns = portfolio_df['daily_return'].dropna()
-        
-        # Métriques de risque
-        volatility = daily_returns.std() * np.sqrt(252)
-        sharpe_ratio = (daily_returns.mean() * 252 - risk_free_rate) / (volatility) if volatility > 0 else 0
-        
-        # Sortino Ratio (downside deviation)
-        downside_returns = daily_returns[daily_returns < 0]
-        downside_deviation = downside_returns.std() * np.sqrt(252) if len(downside_returns) > 0 else 0
-        sortino_ratio = (daily_returns.mean() * 252 - risk_free_rate) / downside_deviation if downside_deviation > 0 else 0
-        
-        # Maximum Drawdown
-        portfolio_df['cumulative_max'] = portfolio_df['portfolio_value'].expanding().max()
-        portfolio_df['drawdown'] = (portfolio_df['portfolio_value'] - portfolio_df['cumulative_max']) / portfolio_df['cumulative_max']
-        max_drawdown = portfolio_df['drawdown'].min()
-        
-        # Calmar Ratio
-        calmar_ratio = (total_return / abs(max_drawdown)) if max_drawdown != 0 else 0
-        
-        # Information Ratio (vs benchmark)
-        benchmark_return = self._calculate_benchmark_return(market_data)
-        excess_returns = daily_returns.mean() * 252 - benchmark_return
-        tracking_error = daily_returns.std() * np.sqrt(252)
-        information_ratio = excess_returns / tracking_error if tracking_error > 0 else 0
-        
-        # Métriques de trading
-        win_rate = 0
-        total_trades = 0
-        
-        if trade_history is not None:
-            # Convertir en DataFrame si nécessaire
-            if isinstance(trade_history, list):
-                if trade_history:
-                    trades_df = pd.DataFrame(trade_history)
-                else:
-                    trades_df = pd.DataFrame()
-            elif isinstance(trade_history, pd.DataFrame):
-                trades_df = trade_history.copy()
+        # Préparer les données du benchmark si market_data est fourni
+        benchmark_returns_df = None
+        if market_data is not None and not market_data.empty and 'close' in market_data.columns:
+            # S'assurer que market_data a un index de type datetime pour l'alignement
+            if not isinstance(market_data.index, pd.DatetimeIndex) and 'timestamp' in market_data.columns:
+                 market_data_bm = market_data.set_index('timestamp').copy()
             else:
-                trades_df = pd.DataFrame()
-            
-            if not trades_df.empty and 'type' in trades_df.columns:
-                total_trades = len(trades_df)
-                buy_trades = trades_df[trades_df['type'] == 'BUY']
-                sell_trades = trades_df[trades_df['type'] == 'SELL']
-                
-                # Win rate calculation based on actual trade outcomes
-                if len(sell_trades) > 0 and len(buy_trades) > 0:
-                    # Calculate actual win rate by comparing buy/sell pairs
-                    winning_trades = 0
-                    total_trade_pairs = 0
-                    
-                    # Simple approach: compare consecutive buy-sell pairs
-                    for i in range(min(len(buy_trades), len(sell_trades))):
-                        if 'price' in buy_trades.columns and 'price' in sell_trades.columns:
-                            buy_price = buy_trades.iloc[i]['price']
-                            sell_price = sell_trades.iloc[i]['price']
-                            if sell_price > buy_price:
-                                winning_trades += 1
-                            total_trade_pairs += 1
-                    
-                    win_rate = winning_trades / total_trade_pairs if total_trade_pairs > 0 else 0
-                else:
-                    # Alternative: calculate based on daily returns
-                    if len(daily_returns) > 0:
-                        positive_returns = daily_returns[daily_returns > 0]
-                        win_rate = len(positive_returns) / len(daily_returns)
-                    else:
-                        win_rate = 0
+                 market_data_bm = market_data.copy()
+
+            # Créer un DataFrame pour le benchmark avec la colonne 'close'
+            # Ceci est une simplification; idéalement, benchmark_data serait un DataFrame séparé
+            # avec des rendements de benchmark. Ici, nous utilisons market_data comme proxy.
+            benchmark_returns_df = pd.DataFrame({'close': market_data_bm['close']}, index=market_data_bm.index)
+
+
+        initial_capital = self.config['strategy_settings'].get('initial_capital', 100000)
         
-        return {
-            'total_return': total_return,
-            'annualized_return': daily_returns.mean() * 252,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'sortino_ratio': sortino_ratio,
-            'max_drawdown': max_drawdown,
-            'calmar_ratio': calmar_ratio,
-            'information_ratio': information_ratio,
-            'win_rate': win_rate,
-            'total_trades': total_trades,
-            'final_value': final_value
-        }
-    
+        # Appeler la fonction centralisée de calcul des métriques
+        # Note: financial_metrics.calculate_portfolio_metrics s'attend à ce que
+        # portfolio_history soit un DataFrame avec 'portfolio_value' et un index Datetime.
+        # trades_df est optionnel. benchmark_data est aussi optionnel.
+        
+        metrics = calculate_portfolio_metrics(
+            portfolio_history=portfolio_df, # Doit contenir 'portfolio_value' et être indexé par date/heure
+            benchmark_data=benchmark_returns_df, # DataFrame avec 'close' et index Datetime
+            trades_df=trades_df, # DataFrame des transactions
+            initial_capital=initial_capital
+        )
+        
+        # Ajouter des métriques qui pourraient ne pas être couvertes par calculate_portfolio_metrics
+        # ou qui sont spécifiques à ce contexte de backtest.
+        # Par exemple, si calculate_portfolio_metrics ne retourne pas 'total_trades' directement
+        # (bien qu'il le fasse via _calculate_trading_metrics).
+        if trades_df is not None and not trades_df.empty:
+            metrics['total_trades'] = metrics.get('total_trades', len(trades_df)) # Assurer que total_trades est présent
+
+        if not portfolio_df.empty and 'portfolio_value' in portfolio_df.columns:
+             metrics['final_value'] = metrics.get('final_value', portfolio_df['portfolio_value'].iloc[-1])
+
+
+        # S'assurer que les métriques clés sont présentes, même avec NaN si non calculables
+        required_keys = self.config['performance_settings'].get('metrics', [])
+        for key in required_keys:
+            if key not in metrics:
+                metrics[key] = np.nan
+        
+        return metrics
+
     def _calculate_benchmark_return(self, market_data: pd.DataFrame) -> float:
         """Calcule le rendement du benchmark (Buy & Hold)"""
         
@@ -860,14 +927,14 @@ class ComprehensiveBacktester:
         with open(report_file, 'w') as f:
             json.dump(final_report, f, indent=2, default=str)
         
-        # Générer un résumé lisible
-        summary_file = f"{self.results_dir}/summary_report_{timestamp}.txt"
-        self._generate_summary_report(final_report, summary_file)
+        # Générer un résumé lisible pour chaque rapport
+        base_summary_filename = f"{self.results_dir}/summary_report_{timestamp}.txt" # Nom de base
+        self._generate_summary_report(final_report, base_summary_filename) # final_report est ici all_final_reports
         
-        logger.info(f"📝 Rapport complet sauvegardé: {report_file}")
-        logger.info(f"📄 Résumé sauvegardé: {summary_file}")
+        logger.info(f"📝 Rapports JSON complets sauvegardés dans {self.results_dir} (préfixe: comprehensive_report_{timestamp})")
+        # Le message pour les résumés est maintenant dans _generate_summary_report
         
-        return final_report
+        return final_report # final_report est ici all_final_reports
     
     def _generate_recommendations(self, comparative_analysis: Dict) -> Dict[str, str]:
         """Génère des recommandations basées sur l'analyse"""
@@ -916,45 +983,61 @@ class ComprehensiveBacktester:
         
         return recommendations
     
-    def _generate_summary_report(self, final_report: Dict, summary_file: str):
-        """Génère un rapport de synthèse lisible"""
+    def _generate_summary_report(self, all_reports: Dict[str, Dict], base_summary_filename: str):
+        """Génère un rapport de synthèse lisible pour chaque passe de backtest."""
         
-        with open(summary_file, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("RAPPORT DE BACKTEST COMPLET - ALPHABETA808TRADING\n")
-            f.write("=" * 80 + "\n\n")
-            
-            # Informations du test
-            test_info = final_report['test_info']
-            f.write(f"Test: {test_info['test_name']}\n")
-            f.write(f"Date: {test_info['timestamp']}\n")
-            f.write(f"Configuration: {len(test_info['config'])} paramètres\n\n")
-            
-            # Résumé des données
-            data_summary = final_report['data_summary']
-            f.write("DONNÉES TESTÉES:\n")
-            f.write(f"- Symboles: {', '.join(data_summary['symbols_tested'])}\n")
-            f.write(f"- Modèles: {', '.join(data_summary['models_tested'])}\n")
-            f.write(f"- Total tests: {data_summary['total_tests']}\n\n")
-            
-            # Analyse comparative
-            comp_analysis = final_report['comparative_analysis']
-            if 'risk_analysis' in comp_analysis:
-                risk = comp_analysis['risk_analysis']
-                f.write("ANALYSE DES RISQUES:\n")
-                f.write(f"- Rendement moyen: {risk.get('avg_return', 0):.2%}\n")
-                f.write(f"- Sharpe ratio moyen: {risk.get('avg_sharpe', 0):.3f}\n")
-                f.write(f"- Drawdown moyen: {risk.get('avg_drawdown', 0):.2%}\n")
-                f.write(f"- Meilleur rendement: {risk.get('best_overall_return', 0):.2%}\n\n")
-            
-            # Recommandations
-            recommendations = final_report['recommendations']
-            if recommendations:
-                f.write("RECOMMANDATIONS:\n")
-                for key, rec in recommendations.items():
-                    f.write(f"- {rec}\n")
-            
-            f.write("\n" + "=" * 80 + "\n")
+        for report_type, final_report_data in all_reports.items():
+            if not final_report_data: # Skip si un rapport est vide (ex: une passe a échoué)
+                logger.warning(f"Aucune donnée de rapport pour {report_type}, résumé non généré.")
+                continue
+
+            # Construire un nom de fichier unique pour chaque résumé
+            # base_summary_filename pourrait être "summary_report_YYYYMMDD_HHMMSS.txt"
+            # On veut "summary_report_YYYYMMDD_HHMMSS_baseline.txt" ou "_with_futures.txt"
+            path_obj = Path(base_summary_filename)
+            summary_file_path = path_obj.with_name(f"{path_obj.stem}_{report_type}{path_obj.suffix}")
+
+            with open(summary_file_path, 'w') as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"RAPPORT DE BACKTEST - {report_type.upper()} - ALPHABETA808TRADING\n")
+                f.write("=" * 80 + "\n\n")
+                
+                # Informations du test
+                test_info = final_report_data.get('test_info', {})
+                f.write(f"Test: {test_info.get('test_name', 'N/A')}\n")
+                f.write(f"Date: {test_info.get('timestamp', 'N/A')}\n")
+                
+                # Indiquer si les features futures ont été utilisées pour cette passe
+                use_futures_features_for_pass = test_info.get('config', {}).get('data_settings', {}).get('use_futures_features', 'N/A')
+                f.write(f"Utilisation des Features Futures: {use_futures_features_for_pass}\n")
+                f.write(f"Configuration: {len(test_info.get('config', {}))} paramètres\n\n")
+                
+                # Résumé des données
+                data_summary = final_report_data.get('data_summary', {})
+                f.write("DONNÉES TESTÉES:\n")
+                f.write(f"- Symboles: {', '.join(data_summary.get('symbols_tested', []))}\n")
+                f.write(f"- Modèles: {', '.join(data_summary.get('models_tested', []))}\n")
+                f.write(f"- Total tests: {data_summary.get('total_tests', 0)}\n\n")
+                
+                # Analyse comparative
+                comp_analysis = final_report_data.get('comparative_analysis', {})
+                if 'risk_analysis' in comp_analysis:
+                    risk = comp_analysis['risk_analysis']
+                    f.write("ANALYSE DES RISQUES (pour cette passe):\n")
+                    f.write(f"- Rendement moyen: {risk.get('avg_return', 0):.2%}\n")
+                    f.write(f"- Sharpe ratio moyen: {risk.get('avg_sharpe', 0):.3f}\n")
+                    f.write(f"- Drawdown moyen: {risk.get('avg_drawdown', 0):.2%}\n")
+                    f.write(f"- Meilleur rendement: {risk.get('best_overall_return', 0):.2%}\n\n")
+                
+                # Recommandations
+                recommendations = final_report_data.get('recommendations', {})
+                if recommendations:
+                    f.write("RECOMMANDATIONS (basées sur cette passe):\n")
+                    for key, rec in recommendations.items():
+                        f.write(f"- {rec}\n")
+                
+                f.write("\n" + "=" * 80 + "\n")
+            logger.info(f"📄 Résumé ({report_type}) sauvegardé: {summary_file_path}")
 
 
 def main():

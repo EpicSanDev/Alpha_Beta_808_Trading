@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-bot
+  namespace: alphabeta808-trading
+  labels:
+    app: trading-bot
+    component: bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trading-bot
+  template:
+    metadata:
+      labels:
+        app: trading-bot
+        component: bot
+    spec:
+      containers:
+      - name: trading-bot
+        image: alphabeta808/trading-bot:latest
+        command: ["python", "live_trading_bot.py"]
+        env:
+        - name: BINANCE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: binance-api-key
+        - name: BINANCE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: trading-secrets
+              key: binance-api-secret
+        - name: PYTHONPATH
+          value: "/app/src:/app"
+        - name: LOG_LEVEL
+          value: "INFO"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/trader_config.json
+          subPath: trader_config.json
+        - name: data-volume
+          mountPath: /app/backtest_results
+        - name: models-volume
+          mountPath: /app/models_store
+        - name: logs-volume
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; exit(0 if os.path.exists('/app/logs/trading_bot.pid') else 1)"
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: trading-config
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: trading-data-pvc
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: trading-models-pvc
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: trading-logs-pvc
+      restartPolicy: Always

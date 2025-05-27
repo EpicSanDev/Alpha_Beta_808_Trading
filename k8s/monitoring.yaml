@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: trading-bot-monitor
+  namespace: alphabeta808-trading
+  labels:
+    app: trading-bot
+spec:
+  selector:
+    matchLabels:
+      app: trading-web-interface
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: trading-bot-alerts
+  namespace: alphabeta808-trading
+  labels:
+    app: trading-bot
+spec:
+  groups:
+  - name: trading-bot.rules
+    rules:
+    - alert: TradingBotDown
+      expr: up{job="trading-web-interface"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Trading bot is down"
+        description: "Trading bot has been down for more than 1 minute"
+    
+    - alert: HighMemoryUsage
+      expr: container_memory_usage_bytes{pod=~"trading-.*"} / container_spec_memory_limit_bytes > 0.9
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage"
+        description: "Memory usage is above 90% for {{ $labels.pod }}"
+    
+    - alert: HighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{pod=~"trading-.*"}[5m]) / container_spec_cpu_quota * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage"
+        description: "CPU usage is above 80% for {{ $labels.pod }}"

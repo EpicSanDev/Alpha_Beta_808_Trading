@@ -1,7 +1,12 @@
 import pandas as pd
 from typing import Optional, List, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
+import requests # Ajout pour BitgetConnector
+import time # Ajout pour la gestion des limites de taux Bitget
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from ..core.database import SessionLocal, OpenInterest, FundingRate, MarkPrice # Ajout pour le stockage DB
 
 # Import optionnel de binance
 try:
@@ -73,6 +78,582 @@ class BinanceConnector:
             specific_assets=specific_assets,
             testnet=self.testnet
         )
+
+class BitgetConnector:
+    """
+    Connecteur pour interagir avec l'API Bitget pour la récupération des données de marché.
+    Documentation API Klines (Futures): Non fournie directement, mais basée sur l'exemple utilisateur:
+    GET /api/mix/v1/market/candles
+    Params: symbol, granularity, startTime, endTime, limit
+    Réponse: [[timestamp, open, high, low, close, base_volume, quote_volume], ...]
+    """
+    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, passphrase: Optional[str] = None):
+        """
+        Initialise le connecteur Bitget.
+
+        Args:
+            api_key (Optional[str]): Clé API Bitget. Non utilisé pour les klines publiques.
+            api_secret (Optional[str]): Clé secrète API Bitget. Non utilisé pour les klines publiques.
+            passphrase (Optional[str]): Passphrase Bitget. Non utilisé pour les klines publiques.
+        """
+        self.base_url = "https://api.bitget.com"
+        self.api_key = api_key # Conservé pour une éventuelle utilisation future (endpoints privés)
+        self.api_secret = api_secret # Conservé pour une éventuelle utilisation future
+        self.passphrase = passphrase # Conservé pour une éventuelle utilisation future
+        # Aucune initialisation de client spécifique nécessaire pour les appels HTTP simples avec `requests`.
+
+    def get_klines(self, symbol: str, intervals: List[str], start_date_str: str, end_date_str: Optional[str] = None, limit_per_request: int = 100) -> Dict[str, pd.DataFrame]:
+        """
+        Charge les données de klines (OHLCV) historiques depuis l'API Bitget pour les contrats à terme.
+
+        Gère la pagination pour récupérer les données sur la période demandée, en respectant
+        les limites de l'API Bitget (ex: 1000 bougies par requête, contrainte de 30 jours pour '1m').
+
+        Args:
+            symbol (str): Le symbole du contrat à terme (ex: 'BTCUSDT_UMCBL').
+                          Doit être en majuscules comme requis par l'API Bitget.
+            intervals (List[str]): Liste des granularités/intervalles de klines (ex: ['1m', '5m', '1H', '1D']).
+                                   Ces valeurs doivent correspondre à celles acceptées par l'API Bitget.
+            start_date_str (str): Date de début pour l'historique.
+                                  Peut être un format 'YYYY-MM-DD' (sera converti en UTC)
+                                  ou un timestamp en millisecondes (chaîne de chiffres).
+            end_date_str (Optional[str]): Date de fin pour l'historique.
+                                          Mêmes formats que start_date_str.
+                                          Si None, la date et l'heure actuelles (UTC) sont utilisées.
+            limit_per_request (int): Nombre de bougies à demander par requête à l'API.
+                                     Le défaut est 100, maximum 1000 selon la documentation Bitget.
+
+        Returns:
+            Dict[str, pd.DataFrame]: Un dictionnaire où chaque clé est une chaîne d'intervalle (ex: '1H')
+                                     et chaque valeur est un DataFrame Pandas contenant les données OHLCV.
+                                     Les colonnes du DataFrame sont:
+                                     ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'symbol', 'interval'].
+                                     'timestamp' est en UTC.
+                                     Retourne un dictionnaire vide si une erreur majeure survient
+                                     ou si aucune donnée n'est récupérée.
+        
+        Raises:
+            Pas d'exceptions directes, les erreurs sont logguées et un dictionnaire vide est retourné.
+        """
+        all_klines_data = {}
+        # Endpoint pour les klines de contrats à terme (mix product)
+        api_endpoint = f"{self.base_url}/api/mix/v1/market/candles"
+
+        try:
+            # Convertir start_date_str en timestamp millisecondes UTC
+            if start_date_str.isdigit():
+                start_ts_ms = int(start_date_str)
+            else:
+                # Assumer que la date est en UTC si pas de fuseau horaire spécifié
+                start_dt = datetime.strptime(start_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                start_ts_ms = int(start_dt.timestamp() * 1000)
+
+            # Convertir end_date_str en timestamp millisecondes UTC
+            if end_date_str:
+                if end_date_str.isdigit():
+                    end_ts_ms = int(end_date_str)
+                else:
+                    end_dt = datetime.strptime(end_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                    end_ts_ms = int(end_dt.timestamp() * 1000)
+            else:
+                # Si pas de date de fin, utiliser maintenant en UTC
+                end_ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+        except ValueError as e:
+            print(f"Erreur de format de date pour Bitget: {e}. Utilisez 'YYYY-MM-DD' ou un timestamp en ms.")
+            return {}
+
+        for granularity in intervals:
+            print(f"  Chargement des données Bitget pour {symbol}, intervalle: {granularity}...")
+            klines_for_interval_list = [] # Liste pour accumuler les données de toutes les pages
+            
+            # Initialiser current_request_start_ts pour la première requête de cet intervalle
+            current_request_start_ts = start_ts_ms
+
+            # Contrainte spécifique de Bitget: "Could only get data within 30 days for '1m' data"
+            # Cela signifie que la différence entre endTime et startTime dans une requête pour '1m'
+            # ne doit pas excéder 30 jours. Notre boucle de pagination doit en tenir compte.
+            # La pagination se fait en ajustant le 'startTime' de la requête suivante.
+            # 'endTime' dans la requête peut rester le 'end_ts_ms' global.
+
+            # Si la période totale demandée pour '1m' est > 30 jours, on doit la segmenter.
+            # Cependant, l'API elle-même limite la plage par requête.
+            # La pagination se fera en demandant des lots jusqu'à ce que end_ts_ms soit atteint.
+
+            loop_safety_counter = 0 # Pour éviter les boucles infinies en cas de logique de pagination erronée
+            MAX_LOOPS = 2000 # Environ 2000 * 1000 bougies = 2M bougies, devrait être suffisant
+
+            while current_request_start_ts < end_ts_ms and loop_safety_counter < MAX_LOOPS:
+                loop_safety_counter += 1
+                
+                # Déterminer le endTime pour cette requête spécifique pour respecter la contrainte de 30 jours pour '1m'
+                current_request_end_ts = end_ts_ms
+                if granularity == '1m':
+                    thirty_days_ms = 30 * 24 * 60 * 60 * 1000
+                    if current_request_start_ts + thirty_days_ms < end_ts_ms:
+                        current_request_end_ts = current_request_start_ts + thirty_days_ms -1 # -1ms pour être inclusif
+
+                params = {
+                    'symbol': symbol.upper(), # L'API requiert des majuscules
+                    'granularity': granularity,
+                    'startTime': str(current_request_start_ts),
+                    'endTime': str(current_request_end_ts),
+                    'limit': str(min(limit_per_request, 1000)) # Max 1000 pour Bitget, défaut 100
+                }
+                
+                try:
+                    # print(f"    DEBUG Bitget Request: {api_endpoint} PARAMS: {params}") # Pour le débogage
+                    response = requests.get(api_endpoint, params=params, timeout=15) # Timeout augmenté à 15s
+                    response.raise_for_status()  # Lève une HTTPError pour les codes d'erreur HTTP
+                    
+                    raw_data_page = response.json() # Bitget retourne une liste de listes
+
+                    if not raw_data_page or not isinstance(raw_data_page, list) or not all(isinstance(item, list) for item in raw_data_page):
+                        # print(f"    Aucune donnée valide reçue de Bitget ou format inattendu pour {symbol} ({granularity}) avec startTime {current_request_start_ts}. Réponse: {raw_data_page}")
+                        break # Sortir de la boucle de pagination pour cet intervalle
+
+                    klines_for_interval_list.extend(raw_data_page)
+                    
+                    # Condition d'arrêt de la pagination:
+                    # 1. Si moins de 'limit' bougies sont retournées, on a atteint la fin des données disponibles pour cette période.
+                    # 2. Si le timestamp de la dernière bougie retournée est >= endTime de la requête.
+                    if len(raw_data_page) < int(params['limit']):
+                        break
+                    
+                    last_kline_ts_page = int(raw_data_page[-1][0])
+                    if last_kline_ts_page >= current_request_end_ts : # On a atteint la fin de la fenêtre de cette requête
+                        break
+
+                    # Mettre à jour current_request_start_ts pour la prochaine requête de pagination.
+                    # Le nouveau startTime sera le timestamp de la dernière bougie reçue + 1ms pour éviter les doublons.
+                    current_request_start_ts = last_kline_ts_page + 1
+
+                    # Respecter la limite de taux de l'API Bitget (ex: 20 requêtes/seconde)
+                    time.sleep(0.05) # Pause de 50ms entre les requêtes
+
+                except requests.exceptions.HTTPError as http_err:
+                    print(f"    Erreur HTTP lors de l'appel à Bitget API pour {symbol} ({granularity}): {http_err}. Réponse: {response.text}")
+                    break
+                except requests.exceptions.RequestException as req_err:
+                    print(f"    Erreur réseau lors de l'appel à Bitget API pour {symbol} ({granularity}): {req_err}")
+                    break
+                except ValueError as json_err: # Erreur de parsing JSON
+                    print(f"    Erreur de parsing JSON de la réponse Bitget pour {symbol} ({granularity}): {json_err}. Réponse: {response.text if 'response' in locals() else 'N/A'}")
+                    break
+                except Exception as e: # Autres erreurs inattendues
+                    print(f"    Erreur inattendue lors de la récupération des klines Bitget pour {symbol} ({granularity}): {e}")
+                    break
+            
+            if loop_safety_counter >= MAX_LOOPS:
+                print(f"    Avertissement: Limite de boucle de pagination atteinte pour {symbol} ({granularity}).")
+
+            if klines_for_interval_list:
+                # Convertir la liste de listes en DataFrame
+                df = pd.DataFrame(klines_for_interval_list, columns=[
+                    'timestamp', 'open', 'high', 'low', 'close',
+                    'base_volume', # Nommé 'volume' dans notre standard
+                    'quote_volume'   # Ignoré pour l'instant pour correspondre au format BinanceConnector
+                ])
+                
+                # Sélectionner et renommer les colonnes pour standardisation
+                df = df[['timestamp', 'open', 'high', 'low', 'close', 'base_volume']]
+                df.rename(columns={'base_volume': 'volume'}, inplace=True)
+                
+                # Convertir les types de données
+                df['timestamp'] = pd.to_datetime(df['timestamp'].astype(str), unit='ms', utc=True)
+                
+                numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+                for col in numeric_cols:
+                    df[col] = pd.to_numeric(df[col], errors='coerce') # errors='coerce' mettra NaN si la conversion échoue
+                
+                # Supprimer les lignes où la conversion numérique a échoué pour les colonnes clés
+                df.dropna(subset=numeric_cols, inplace=True)
+                if df.empty:
+                    print(f"    Toutes les lignes pour {symbol} ({granularity}) ont été supprimées après la conversion numérique et la suppression des NaN.")
+                    continue
+
+
+                df['symbol'] = symbol.upper()
+                df['interval'] = granularity
+                
+                # Trier par timestamp et supprimer les doublons potentiels (si la pagination en a introduit)
+                df.sort_values(by='timestamp', inplace=True)
+                df.drop_duplicates(subset=['timestamp'], keep='first', inplace=True) # Garder la première occurrence
+                
+                df.reset_index(drop=True, inplace=True)
+
+                all_klines_data[granularity] = df
+                print(f"    Données Bitget pour {symbol} ({granularity}) chargées et traitées: {len(df)} lignes.")
+            else:
+                print(f"    Aucune donnée Bitget n'a pu être chargée pour {symbol} ({granularity}).")
+
+        if not all_klines_data:
+            print(f"Aucune donnée n'a pu être récupérée pour {symbol} avec les intervalles {intervals} depuis Bitget.")
+        return all_klines_data
+
+    def _make_request(self, endpoint_path: str, params: Optional[Dict] = None, error_context: str = "") -> Optional[Dict]:
+        """
+        Méthode utilitaire pour effectuer des requêtes GET à l'API Bitget et gérer les erreurs communes.
+        """
+        full_url = f"{self.base_url}{endpoint_path}"
+        retries = 3
+        for attempt in range(retries):
+            try:
+                # print(f"DEBUG Bitget Request: {full_url} PARAMS: {params}") # Pour le débogage
+                response = requests.get(full_url, params=params, timeout=15)
+                response.raise_for_status()
+                
+                if not response.content:
+                    print(f"Réponse vide de Bitget pour {error_context} à {full_url} avec params {params}.")
+                    return None
+
+                data = response.json()
+                if data.get("code") != "00000":
+                    print(f"Erreur API Bitget pour {error_context} ({data.get('code')}): {data.get('msg')}. URL: {full_url}, Params: {params}")
+                    return None
+                return data.get("data")
+            
+            except requests.exceptions.HTTPError as http_err:
+                print(f"Erreur HTTP lors de l'appel à Bitget API pour {error_context}: {http_err}. URL: {full_url}, Params: {params}, Réponse: {response.text if 'response' in locals() else 'N/A'}")
+                if attempt == retries - 1: return None
+                time.sleep(2 ** attempt) 
+            except requests.exceptions.RequestException as req_err:
+                print(f"Erreur réseau lors de l'appel à Bitget API pour {error_context}: {req_err}. URL: {full_url}, Params: {params}")
+                if attempt == retries - 1: return None
+                time.sleep(2 ** attempt)
+            except ValueError as json_err: 
+                print(f"Erreur de parsing JSON de la réponse Bitget pour {error_context}: {json_err}. URL: {full_url}, Params: {params}, Réponse: {response.text if 'response' in locals() else 'N/A'}")
+                return None 
+            except Exception as e:
+                print(f"Erreur inattendue lors de la requête Bitget pour {error_context}: {e}. URL: {full_url}, Params: {params}")
+                if attempt == retries - 1: return None
+                time.sleep(2 ** attempt)
+        return None
+
+    def get_open_interest(self, symbol: str, db_session: Optional[Session] = None) -> Optional[pd.DataFrame]:
+        """
+        Récupère les données d'Open Interest pour un symbole de contrat à terme et les stocke en BDD.
+
+        Args:
+            symbol (str): Le symbole du contrat à terme (ex: 'BTCUSDT_UMCBL').
+            db_session (Optional[Session]): Session SQLAlchemy pour l'interaction avec la BDD.
+
+        Returns:
+            Optional[pd.DataFrame]: Un DataFrame avec les colonnes ['timestamp', 'symbol', 'open_interest']
+                                     ou None si une erreur survient.
+                                     'timestamp' est en UTC.
+        """
+        endpoint_path = "/api/mix/v1/market/open-interest"
+        params = {'symbol': symbol.upper()}
+        error_context = f"Open Interest pour {symbol}"
+        
+        data = self._make_request(endpoint_path, params, error_context)
+        
+        if data and isinstance(data, dict):
+            try:
+                df = pd.DataFrame([data])
+                df.rename(columns={'amount': 'open_interest'}, inplace=True)
+                df['timestamp'] = pd.to_datetime(df['timestamp'].astype(str), unit='ms', utc=True)
+                df['open_interest'] = pd.to_numeric(df['open_interest'], errors='coerce')
+                # L'API renvoie le symbole, donc on l'utilise directement.
+                # df['symbol'] = symbol.upper() # Assurer la cohérence si l'API ne le renvoyait pas
+                df['symbol'] = df['symbol'].astype(str)
+
+
+                df = df[['timestamp', 'symbol', 'open_interest']]
+                
+                df.dropna(inplace=True)
+                if df.empty:
+                    print(f"Aucune donnée d'open interest valide après traitement pour {symbol}.")
+                    return None
+
+                if db_session:
+                    for _, row in df.iterrows():
+                        oi_entry = OpenInterest(
+                            symbol=row['symbol'],
+                            timestamp=row['timestamp'].to_pydatetime(), # Convertir Timestamp Pandas en datetime Python
+                            value=row['open_interest']
+                        )
+                        try:
+                            db_session.add(oi_entry)
+                            db_session.commit()
+                        except IntegrityError:
+                            db_session.rollback()
+                            # print(f"Doublon détecté pour OpenInterest: {row['symbol']} @ {row['timestamp']}. Non inséré.")
+                        except Exception as e_db:
+                            db_session.rollback()
+                            print(f"Erreur DB lors de l'insertion de OpenInterest pour {row['symbol']}: {e_db}")
+                return df
+            except Exception as e:
+                print(f"Erreur lors de la transformation ou stockage des données d'open interest pour {symbol}: {e}. Données brutes: {data}")
+                return None
+        else:
+            print(f"Aucune donnée ou format de données incorrect reçu pour l'open interest de {symbol}.")
+            return None
+
+    def get_current_funding_rate(self, symbol: str, db_session: Optional[Session] = None) -> Optional[pd.DataFrame]:
+        """
+        Récupère le taux de financement actuel pour un symbole de contrat à terme.
+
+        Args:
+            symbol (str): Le symbole du contrat à terme (ex: 'BTCUSDT_UMCBL').
+
+        Returns:
+            Optional[pd.DataFrame]: Un DataFrame avec les colonnes ['timestamp', 'symbol', 'funding_rate']
+                                     ou None si une erreur survient.
+                                     'timestamp' est l'heure actuelle de la requête en UTC.
+        """
+        endpoint_path = "/api/mix/v1/market/current-fundRate"
+        params = {'symbol': symbol.upper()}
+        error_context = f"Taux de financement actuel pour {symbol}"
+        
+        data = self._make_request(endpoint_path, params, error_context)
+        
+        if data and isinstance(data, dict):
+            try:
+                df = pd.DataFrame([data])
+                df.rename(columns={'fundingRate': 'funding_rate'}, inplace=True)
+                # Le timestamp du funding rate actuel est celui de la requête, car l'API ne le fournit pas.
+                # Cependant, pour l'historique, l'API fournit 'settleTime'.
+                # Pour la cohérence du stockage, il est préférable d'utiliser le 'settleTime' si disponible
+                # ou un timestamp de la donnée elle-même. Ici, c'est le "current", donc now() est ok.
+                current_api_timestamp = pd.to_datetime(data.get('timestamp'), unit='ms', utc=True) if data.get('timestamp') else pd.Timestamp.now(tz='UTC').round('ms')
+                df['timestamp'] = current_api_timestamp
+                df['funding_rate'] = pd.to_numeric(df['funding_rate'], errors='coerce')
+                df['symbol'] = df['symbol'].astype(str)
+
+                df = df[['timestamp', 'symbol', 'funding_rate']]
+                
+                df.dropna(inplace=True)
+                if df.empty:
+                    print(f"Aucune donnée de taux de financement actuel valide après traitement pour {symbol}.")
+                    return None
+
+                if db_session:
+                    for _, row in df.iterrows():
+                        fr_entry = FundingRate(
+                            symbol=row['symbol'],
+                            timestamp=row['timestamp'].to_pydatetime(),
+                            value=row['funding_rate']
+                        )
+                        try:
+                            db_session.add(fr_entry)
+                            db_session.commit()
+                        except IntegrityError:
+                            db_session.rollback()
+                            # print(f"Doublon détecté pour FundingRate (current): {row['symbol']} @ {row['timestamp']}. Non inséré.")
+                        except Exception as e_db:
+                            db_session.rollback()
+                            print(f"Erreur DB lors de l'insertion de FundingRate (current) pour {row['symbol']}: {e_db}")
+                return df
+            except Exception as e:
+                print(f"Erreur lors de la transformation ou stockage des données de taux de financement actuel pour {symbol}: {e}. Données brutes: {data}")
+                return None
+        else:
+            print(f"Aucune donnée ou format de données incorrect reçu pour le taux de financement actuel de {symbol}.")
+            return None
+
+    def get_historical_funding_rates(self, symbol: str, page_size: int = 100, page_no: int = 1, db_session: Optional[Session] = None) -> Optional[pd.DataFrame]:
+        """
+        Récupère l'historique des taux de financement pour un symbole de contrat à terme.
+
+        Args:
+            symbol (str): Le symbole du contrat à terme (ex: 'BTCUSDT_UMCBL').
+            page_size (int): Nombre d'enregistrements par page.
+            page_no (int): Numéro de la page à récupérer.
+
+        Returns:
+            Optional[pd.DataFrame]: Un DataFrame avec les colonnes ['timestamp', 'symbol', 'funding_rate']
+                                     ou None si une erreur survient.
+                                     'timestamp' (settleTime) est en UTC.
+        """
+        endpoint_path = "/api/mix/v1/market/history-fundRate"
+        params = {
+            'symbol': symbol.upper(),
+            'pageSize': str(page_size),
+            'pageNo': str(page_no)
+        }
+        error_context = f"Historique des taux de financement pour {symbol} (page {page_no})"
+        
+        data_list = self._make_request(endpoint_path, params, error_context)
+        
+        if data_list and isinstance(data_list, list):
+            if not data_list:
+                # print(f"Aucune donnée d'historique de taux de financement retournée par l'API pour {symbol}, page {page_no}.")
+                return pd.DataFrame(columns=['timestamp', 'symbol', 'funding_rate']) # Retourner un DF vide est ok
+
+            try:
+                df = pd.DataFrame(data_list)
+                df.rename(columns={'fundingRate': 'funding_rate', 'settleTime': 'timestamp'}, inplace=True)
+                df['timestamp'] = pd.to_datetime(df['timestamp'].astype(str), unit='ms', utc=True)
+                df['funding_rate'] = pd.to_numeric(df['funding_rate'], errors='coerce')
+                df['symbol'] = symbol.upper() # L'API ne renvoie pas le symbole dans la liste, on le réassigne
+
+                df = df[['timestamp', 'symbol', 'funding_rate']]
+                
+                df.dropna(inplace=True)
+                if df.empty:
+                     # print(f"Aucune donnée d'historique de FR valide après traitement pour {symbol} page {page_no}.")
+                     return df # Retourner DF vide
+
+                if db_session:
+                    for _, row in df.iterrows():
+                        fr_entry = FundingRate(
+                            symbol=row['symbol'],
+                            timestamp=row['timestamp'].to_pydatetime(),
+                            value=row['funding_rate']
+                        )
+                        try:
+                            db_session.add(fr_entry)
+                            db_session.commit()
+                        except IntegrityError:
+                            db_session.rollback()
+                            # print(f"Doublon détecté pour FundingRate (hist): {row['symbol']} @ {row['timestamp']}. Non inséré.")
+                        except Exception as e_db:
+                            db_session.rollback()
+                            print(f"Erreur DB lors de l'insertion de FundingRate (hist) pour {row['symbol']}: {e_db}")
+                return df
+            except Exception as e:
+                print(f"Erreur lors de la transformation ou stockage des données d'historique de taux de financement pour {symbol}: {e}. Données brutes: {data_list}")
+                return None
+        else:
+            if data_list is None: # Erreur déjà logguée par _make_request
+                pass
+            elif not isinstance(data_list, list):
+                 print(f"Format de données incorrect reçu pour l'historique des taux de financement de {symbol} (attendu: list, reçu: {type(data_list)}).")
+            return None
+
+    def get_mark_price(self, symbol: str, db_session: Optional[Session] = None) -> Optional[pd.DataFrame]:
+        """
+        Récupère le Mark Price actuel pour un symbole de contrat à terme.
+
+        Args:
+            symbol (str): Le symbole du contrat à terme (ex: 'BTCUSDT_UMCBL').
+
+        Returns:
+            Optional[pd.DataFrame]: Un DataFrame avec les colonnes ['timestamp', 'symbol', 'mark_price']
+                                     ou None si une erreur survient.
+                                     'timestamp' est en UTC.
+        """
+        endpoint_path = "/api/mix/v1/market/mark-price"
+        params = {'symbol': symbol.upper()}
+        error_context = f"Mark Price pour {symbol}"
+        
+        data = self._make_request(endpoint_path, params, error_context)
+        
+        if data and isinstance(data, dict):
+            try:
+                df = pd.DataFrame([data])
+                df.rename(columns={'markPrice': 'mark_price'}, inplace=True)
+                df['timestamp'] = pd.to_datetime(df['timestamp'].astype(str), unit='ms', utc=True)
+                df['mark_price'] = pd.to_numeric(df['mark_price'], errors='coerce')
+                df['symbol'] = df['symbol'].astype(str)
+
+                df = df[['timestamp', 'symbol', 'mark_price']]
+                
+                df.dropna(inplace=True)
+                if df.empty:
+                    print(f"Aucune donnée de mark price valide après traitement pour {symbol}.")
+                    return None
+
+                if db_session:
+                    for _, row in df.iterrows():
+                        mp_entry = MarkPrice(
+                            symbol=row['symbol'],
+                            timestamp=row['timestamp'].to_pydatetime(),
+                            value=row['mark_price']
+                        )
+                        try:
+                            db_session.add(mp_entry)
+                            db_session.commit()
+                        except IntegrityError:
+                            db_session.rollback()
+                            # print(f"Doublon détecté pour MarkPrice: {row['symbol']} @ {row['timestamp']}. Non inséré.")
+                        except Exception as e_db:
+                            db_session.rollback()
+                            print(f"Erreur DB lors de l'insertion de MarkPrice pour {row['symbol']}: {e_db}")
+                return df
+            except Exception as e:
+                print(f"Erreur lors de la transformation ou stockage des données de mark price pour {symbol}: {e}. Données brutes: {data}")
+                return None
+        else:
+            print(f"Aucune donnée ou format de données incorrect reçu pour le mark price de {symbol}.")
+            return None
+
+    def fetch_and_store_all_metrics(self, symbol: str, fetch_historical_funding: bool = True, funding_pages_to_fetch: int = 5):
+        """
+        Récupère toutes les nouvelles métriques (Open Interest, Funding Rate, Mark Price)
+        pour un symbole donné et les stocke dans la base de données.
+
+        Args:
+            symbol (str): Le symbole du contrat à terme (ex: 'BTCUSDT_UMCBL').
+            fetch_historical_funding (bool): Si True, tente de récupérer l'historique des funding rates.
+            funding_pages_to_fetch (int): Nombre de pages à récupérer pour l'historique des funding rates.
+        """
+        db = SessionLocal()
+        try:
+            print(f"Début de la récupération et stockage des métriques pour {symbol}...")
+
+            # Open Interest
+            print(f"  Récupération de l'Open Interest pour {symbol}...")
+            oi_df = self.get_open_interest(symbol=symbol, db_session=db)
+            if oi_df is not None and not oi_df.empty:
+                print(f"    Open Interest pour {symbol} récupéré et traité pour stockage: {len(oi_df)} ligne(s).")
+            elif oi_df is not None and oi_df.empty:
+                 print(f"    Aucune donnée d'Open Interest retournée pour {symbol} après traitement.")
+            else:
+                print(f"    Échec de la récupération de l'Open Interest pour {symbol}.")
+
+            # Mark Price (souvent utile d'avoir le plus récent)
+            print(f"  Récupération du Mark Price pour {symbol}...")
+            mp_df = self.get_mark_price(symbol=symbol, db_session=db)
+            if mp_df is not None and not mp_df.empty:
+                print(f"    Mark Price pour {symbol} récupéré et traité pour stockage: {len(mp_df)} ligne(s).")
+            elif mp_df is not None and mp_df.empty:
+                print(f"    Aucune donnée de Mark Price retournée pour {symbol} après traitement.")
+            else:
+                print(f"    Échec de la récupération du Mark Price pour {symbol}.")
+
+            # Current Funding Rate
+            # print(f"  Récupération du Taux de Financement Actuel pour {symbol}...")
+            # cfr_df = self.get_current_funding_rate(symbol=symbol, db_session=db) # Déjà stocké si pertinent
+            # if cfr_df is not None and not cfr_df.empty:
+            #     print(f"    Taux de Financement Actuel pour {symbol} récupéré et traité pour stockage: {len(cfr_df)} ligne(s).")
+            # else:
+            #     print(f"    Échec de la récupération du Taux de Financement Actuel pour {symbol}.")
+
+            # Historical Funding Rates
+            if fetch_historical_funding:
+                print(f"  Récupération de l'historique des Taux de Financement pour {symbol} (jusqu'à {funding_pages_to_fetch} pages)...")
+                all_historical_fr_dfs = []
+                for page_num in range(1, funding_pages_to_fetch + 1):
+                    print(f"    Page {page_num}/{funding_pages_to_fetch}...")
+                    hfr_df_page = self.get_historical_funding_rates(symbol=symbol, page_no=page_num, db_session=db)
+                    if hfr_df_page is not None and not hfr_df_page.empty:
+                        all_historical_fr_dfs.append(hfr_df_page)
+                        print(f"      Page {page_num} récupérée et traitée pour stockage: {len(hfr_df_page)} ligne(s).")
+                        if len(hfr_df_page) < 100: # Moins que la page size par défaut, probablement la fin
+                            print(f"      Moins de 100 résultats sur la page {page_num}, arrêt de la pagination pour les funding rates.")
+                            break
+                    elif hfr_df_page is not None and hfr_df_page.empty:
+                        print(f"      Aucune donnée sur la page {page_num} pour l'historique des funding rates. Arrêt.")
+                        break
+                    else:
+                        print(f"      Échec de la récupération de la page {page_num} pour l'historique des funding rates. Arrêt.")
+                        break # Arrêter si une page échoue
+                
+                if all_historical_fr_dfs:
+                    combined_hfr_df = pd.concat(all_historical_fr_dfs).drop_duplicates(subset=['timestamp', 'symbol']).sort_values(by='timestamp')
+                    print(f"    Total de {len(combined_hfr_df)} enregistrements d'historique de Taux de Financement uniques récupérés et traités pour {symbol}.")
+                else:
+                    print(f"    Aucun enregistrement d'historique de Taux de Financement n'a été récupéré pour {symbol}.")
+            
+            print(f"Fin de la récupération et stockage des métriques pour {symbol}.")
+
+        except Exception as e:
+            print(f"Erreur majeure dans fetch_and_store_all_metrics pour {symbol}: {e}")
+        finally:
+            db.close()
 
 def load_csv_data(
     file_path: str,

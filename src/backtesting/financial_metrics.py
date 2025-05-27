@@ -10,6 +10,15 @@ from typing import Dict, List, Tuple, Optional, Union
 from scipy import stats
 import warnings
 
+# Import new futures metrics functions
+from src.validation.futures_metrics import (
+    calculate_profit_per_contract,
+    calculate_returns_skewness,
+    calculate_returns_kurtosis,
+    calculate_funding_cost_impact, # Placeholder, may not be used if data not available
+    calculate_sortino_ratio_futures
+)
+
 warnings.filterwarnings("ignore")
 
 
@@ -27,9 +36,10 @@ class FinancialMetricsCalculator:
         """
         self.risk_free_rate = risk_free_rate
     
-    def calculate_all_metrics(self, returns: pd.Series, 
+    def calculate_all_metrics(self, returns: pd.Series,
                             benchmark_returns: Optional[pd.Series] = None,
-                            prices: Optional[pd.Series] = None) -> Dict[str, float]:
+                            prices: Optional[pd.Series] = None,
+                            trades_df: Optional[pd.DataFrame] = None) -> Dict[str, float]:
         """
         Calcule toutes les métriques financières disponibles
         
@@ -37,6 +47,7 @@ class FinancialMetricsCalculator:
             returns: Série des rendements quotidiens
             benchmark_returns: Rendements du benchmark (optionnel)
             prices: Série des prix (optionnel, pour certaines métriques)
+            trades_df: DataFrame des transactions (optionnel, pour les métriques futures)
             
         Returns:
             Dictionnaire contenant toutes les métriques
@@ -68,9 +79,53 @@ class FinancialMetricsCalculator:
         
         # Métriques de trading spécifiques
         metrics.update(self._calculate_trading_metrics(returns))
+
+        # Métriques spécifiques aux Futures
+        metrics.update(self._calculate_futures_specific_metrics(returns, trades_df))
         
         return metrics
     
+    def _calculate_futures_specific_metrics(self, returns: pd.Series, trades_df: Optional[pd.DataFrame] = None) -> Dict[str, float]:
+        """Calcule les métriques spécifiques aux contrats à terme."""
+        metrics = {}
+
+        # Utiliser les fonctions de futures_metrics.py
+        # Note: certaines fonctions comme calculate_profit_per_contract et calculate_funding_cost_impact
+        # nécessitent trades_df. D'autres comme skewness, kurtosis, sortino_ratio_futures utilisent 'returns'.
+
+        if not returns.empty:
+            metrics['futures_skewness'] = calculate_returns_skewness(returns)
+            metrics['futures_kurtosis'] = calculate_returns_kurtosis(returns)
+            # Utilisation de la version "futures" du Sortino Ratio
+            # Le risk_free_rate est déjà un attribut de la classe.
+            # period_annualization_factor est supposé être 252 pour les rendements journaliers.
+            # target_return peut être 0 par défaut ou configuré.
+            metrics['sortino_ratio_futures'] = calculate_sortino_ratio_futures(
+                returns,
+                risk_free_rate=self.risk_free_rate,
+                target_return=0.0, # Peut être ajusté
+                period_annualization_factor=252 # Supposant des rendements journaliers
+            )
+
+        if trades_df is not None and not trades_df.empty:
+            # Pour profit_per_contract, contract_size est nécessaire.
+            # On utilisera une valeur par défaut pour l'instant, ou on pourrait la rendre configurable.
+            metrics['profit_per_contract'] = calculate_profit_per_contract(trades_df, contract_size=1.0)
+            
+            # Pour funding_cost_impact, il faut 'funding_fees' dans trades_df et total_pnl.
+            # total_pnl peut être calculé à partir des rendements ou de trades_df.
+            # C'est un placeholder, donc on le laisse pour l'instant, il retournera NaN si les données manquent.
+            if 'total_return' in self._calculate_return_metrics(returns): # Assurer que total_return est calculable
+                 # Ceci est une approximation, car total_return est basé sur les rendements, pas directement sur la somme des PnL des trades.
+                 # Idéalement, total_pnl viendrait de trades_df['pnl'].sum()
+                current_total_pnl = trades_df['pnl'].sum() if 'pnl' in trades_df.columns else np.nan
+                if not np.isnan(current_total_pnl):
+                    metrics['funding_cost_impact_pct'] = calculate_funding_cost_impact(trades_df, current_total_pnl)
+
+
+        # Filtrer les NaN pour ne pas polluer le rapport avec des métriques non calculables
+        return {k: v for k, v in metrics.items() if not pd.isna(v)}
+
     def _calculate_return_metrics(self, returns: pd.Series) -> Dict[str, float]:
         """Calcule les métriques de rendement"""
         
@@ -132,10 +187,16 @@ class FinancialMetricsCalculator:
         volatility = returns.std()
         metrics['sharpe_ratio'] = (excess_returns * 252) / (volatility * np.sqrt(252)) if volatility > 0 else 0
         
-        # Sortino Ratio
-        downside_returns = returns[returns < self.risk_free_rate / 252]
-        downside_deviation = downside_returns.std() if len(downside_returns) > 0 else 0
-        metrics['sortino_ratio'] = (excess_returns * 252) / (downside_deviation * np.sqrt(252)) if downside_deviation > 0 else 0
+        # Sortino Ratio (version standard, conservée pour comparaison ou usage général)
+        # La version spécifique aux futures est dans _calculate_futures_specific_metrics
+        downside_returns_std = returns[returns < self.risk_free_rate / 252] # Comparaison au rendement périodique sans risque
+        downside_deviation_std = downside_returns_std.std() if len(downside_returns_std) > 0 else 0
+        # Calcul du numérateur (rendement excédentaire annualisé)
+        annualized_excess_return = (returns.mean() * 252) - self.risk_free_rate
+        # Calcul du dénominateur (écart-type annualisé des rendements négatifs)
+        annualized_downside_deviation_std = downside_deviation_std * np.sqrt(252)
+        
+        metrics['sortino_ratio'] = annualized_excess_return / annualized_downside_deviation_std if annualized_downside_deviation_std > 0 else 0
         
         # Calmar Ratio (nécessite les prix pour le drawdown)
         if 'max_drawdown' in metrics:
@@ -455,7 +516,24 @@ class FinancialMetricsCalculator:
                 report.append(f"Facteur de Profit:      {metrics['profit_factor']:>12.3f}")
             if 'expectancy' in metrics:
                 report.append(f"Espérance:              {metrics['expectancy']:>12.4f}")
-        
+
+        # Métriques spécifiques aux Futures
+        futures_metric_keys = ['profit_per_contract', 'futures_skewness', 'futures_kurtosis',
+                               'sortino_ratio_futures', 'funding_cost_impact_pct']
+        if any(key in metrics for key in futures_metric_keys):
+            report.append("\n🚀 MÉTRIQUES SPÉCIFIQUES AUX FUTURES:")
+            report.append("-" * 40)
+            if 'profit_per_contract' in metrics:
+                report.append(f"Profit par Contrat:     {metrics['profit_per_contract']:>12.2f}")
+            if 'funding_cost_impact_pct' in metrics:
+                 report.append(f"Impact Frais Fin. (%PnL):{metrics['funding_cost_impact_pct']:>12.2f}%")
+            if 'futures_skewness' in metrics:
+                report.append(f"Skewness (Futures):     {metrics['futures_skewness']:>12.3f}")
+            if 'futures_kurtosis' in metrics:
+                report.append(f"Kurtosis (Futures):     {metrics['futures_kurtosis']:>12.3f}")
+            if 'sortino_ratio_futures' in metrics:
+                report.append(f"Ratio Sortino (Futures):{metrics['sortino_ratio_futures']:>12.3f}")
+
         report.append("\n" + "=" * 80)
         
         return "\n".join(report)
@@ -463,13 +541,15 @@ class FinancialMetricsCalculator:
 
 def calculate_portfolio_metrics(portfolio_history: Union[List[Dict], pd.DataFrame],
                               benchmark_data: Optional[pd.DataFrame] = None,
+                              trades_df: Optional[pd.DataFrame] = None, # Ajout de trades_df
                               initial_capital: float = 100000) -> Dict[str, float]:
     """
     Fonction utilitaire pour calculer les métriques d'un portefeuille
     
     Args:
-        portfolio_history: Historique du portefeuille
+        portfolio_history: Historique du portefeuille (valeur, dates)
         benchmark_data: Données du benchmark (optionnel)
+        trades_df: DataFrame des transactions (optionnel, pour métriques futures)
         initial_capital: Capital initial
         
     Returns:
@@ -506,7 +586,8 @@ def calculate_portfolio_metrics(portfolio_history: Union[List[Dict], pd.DataFram
     metrics = calculator.calculate_all_metrics(
         returns=returns,
         benchmark_returns=benchmark_returns,
-        prices=prices
+        prices=prices,
+        trades_df=trades_df # Passer trades_df ici
     )
     
     return metrics

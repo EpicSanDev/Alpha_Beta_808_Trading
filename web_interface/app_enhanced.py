@@ -1301,10 +1301,10 @@ class TradingExecutor:
     
     def update_positions_pnl(self):
         """Met à jour le PnL de toutes les positions ouvertes"""
-        positions = self.db_manager.get_positions(open_only=True)
+        positions = self.web_interface.db_manager.get_positions(open_only=True)
         
         for position in positions:
-            current_price = self.get_real_time_price(position['symbol'])
+            current_price = self.web_interface.get_real_time_price(position['symbol'])
             if current_price > 0:
                 pnl, pnl_percent = self.get_position_pnl(
                     position['symbol'],
@@ -1314,7 +1314,7 @@ class TradingExecutor:
                     position['side']
                 )
                 
-                self.db_manager.update_position_pnl(
+                self.web_interface.db_manager.update_position_pnl(
                     position['symbol'], current_price, pnl, pnl_percent
                 )
     
@@ -2863,8 +2863,8 @@ def api_cancel_order(order_id):
 def api_portfolio_value():
     """API: Get portfolio value"""
     try:
-        paper_value = web_interface.get_portfolio_value(is_paper=True)
-        real_value = web_interface.get_portfolio_value(is_paper=False)
+        paper_value = web_interface.trade_executor.get_portfolio_value(is_paper=True)
+        real_value = web_interface.trade_executor.get_portfolio_value(is_paper=False)
         
         return jsonify({
             'success': True,
@@ -2908,7 +2908,7 @@ def api_portfolio_pnl():
     """API: Get P&L summary"""
     try:
         # Update positions PnL first
-        web_interface.update_positions_pnl()
+        web_interface.trade_executor.update_positions_pnl()
         
         positions = web_interface.db_manager.get_positions(open_only=True)
         total_pnl = sum(pos.get('pnl', 0) for pos in positions)

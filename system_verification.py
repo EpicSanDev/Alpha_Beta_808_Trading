@@ -23,7 +23,7 @@ def test_imports():
         from src.acquisition.connectors import load_binance_klines, generate_random_market_data
         from src.feature_engineering.technical_features import calculate_sma, calculate_rsi, calculate_macd
         from src.modeling.models import prepare_data_for_model, load_model_and_predict
-        from src.signal_generation.signal_generator import generate_signals_from_predictions
+        from src.signal_generation.signal_generator import generate_base_signals_from_predictions
         from src.execution.real_time_trading import BinanceRealTimeTrader, MarketData, TradingOrder
         from src.risk_management.risk_controls import check_position_limit
         from src.portfolio.multi_asset import MultiAssetPortfolioManager

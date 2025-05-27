@@ -841,16 +841,27 @@ class TradingStrategy:
         
         # Créer l'ordre si nécessaire
         if quantity_diff > 0 and signal > buy_threshold:
-            # Signal d'achat
-            order = TradingOrder(
-                symbol=symbol,
-                side=OrderSide.BUY,
-                order_type=OrderType.MARKET,
-                quantity=abs(quantity_diff),
-                client_order_id=f"buy_{symbol}_{int(time.time())}"
-            )
+            # Vérifier les ordres d'achat ouverts existants pour ce symbole
+            has_open_buy_order = False
+            for open_order in self.trader.open_orders.values():
+                if open_order.symbol == symbol and \
+                   open_order.side == OrderSide.BUY and \
+                   open_order.status not in [OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.EXPIRED]:
+                    has_open_buy_order = True
+                    self.logger.info(f"Un ordre d'achat ouvert existe déjà pour {symbol}. Nouvel ordre d'achat ignoré.")
+                    break
             
-            self.trader.place_order(order)
+            if not has_open_buy_order:
+                # Signal d'achat
+                order = TradingOrder(
+                    symbol=symbol,
+                    side=OrderSide.BUY,
+                    order_type=OrderType.MARKET,
+                    quantity=abs(quantity_diff),
+                    client_order_id=f"buy_{symbol}_{int(time.time())}"
+                )
+                
+                self.trader.place_order(order)
             
         elif quantity_diff < 0 and signal < sell_threshold:
             # Signal de vente

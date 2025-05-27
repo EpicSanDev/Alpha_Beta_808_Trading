@@ -30,12 +30,11 @@ from src.feature_engineering.technical_features import (
     calculate_price_momentum, calculate_volume_features
 )
 from src.modeling.models import prepare_data_for_model, load_model_and_predict
-from src.signal_generation.signal_generator import generate_signals_from_predictions
+from src.signal_generation.signal_generator import generate_base_signals_from_predictions
 from src.execution.real_time_trading import (
     BinanceRealTimeTrader, TradingStrategy, RiskManager,
     MarketData, TradingOrder, OrderSide, OrderType, OrderStatus
 )
-from src.risk_management.risk_controls import check_position_limit
 from src.portfolio.multi_asset import MultiAssetPortfolioManager
 
 # Configuration du logging

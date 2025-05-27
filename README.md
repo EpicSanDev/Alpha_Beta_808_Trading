@@ -340,3 +340,5 @@ The architecture supports extension to other exchanges:
 **Happy Trading! 🚀**
 
 *Built with ❤️ by the AlphaBeta808 Team*
+
+![Alt](https://repobeats.axiom.co/api/embed/2140511158344cbbdd1d2f1db9778290dcaba524.svg "Repobeats analytics image")

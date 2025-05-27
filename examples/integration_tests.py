@@ -316,7 +316,7 @@ class TestSystemIntegration(unittest.TestCase):
             # Import existing modules
             from acquisition.connectors import generate_random_market_data
             from feature_engineering.technical_features import calculate_sma, calculate_rsi
-            from signal_generation.signal_generator import generate_signals_from_predictions
+            from signal_generation.signal_generator import generate_base_signals_from_predictions
             
             # Import advanced features
             from portfolio.multi_asset import MultiAssetPortfolioManager

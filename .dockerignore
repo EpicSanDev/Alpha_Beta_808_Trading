@@ -1,0 +1,39 @@
+# Ne pas inclure les fichiers sensibles dans l'image Docker
+.env
+*.log
+logs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+trading_env/
+.git/
+.gitignore
+README.md
+DOCS/
+tests/
+backtest_results/
+*.db
+*.sqlite
+*.sqlite3
+
+# Fichiers temporaires
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Certificats et clés
+*.pem
+*.key
+*.crt
+
+# Fichiers de configuration locaux
+config/local_*
+local_config.json

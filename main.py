@@ -21,7 +21,7 @@ from feature_engineering.technical_features import calculate_sma, calculate_ema,
 from modeling.models import prepare_data_for_model, train_model, load_model_and_predict
 
 # Étape 4: Génération de Signaux et Allocation
-from signal_generation.signal_generator import generate_signals_from_predictions, allocate_capital_simple
+from signal_generation.signal_generator import generate_base_signals_from_predictions, allocate_capital_simple
 
 # Étape 5: Gestion des Risques
 from risk_management.risk_controls import check_position_limit

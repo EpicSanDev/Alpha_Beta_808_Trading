@@ -25,7 +25,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 from acquisition.connectors import generate_random_market_data
 from feature_engineering.technical_features import calculate_sma, calculate_ema, calculate_rsi
 from modeling.models import prepare_data_for_model, train_model
-from signal_generation.signal_generator import generate_signals_from_predictions
+from signal_generation.signal_generator import generate_base_signals_from_predictions
 
 # Import new advanced features
 from validation.walk_forward import WalkForwardValidator, AdaptiveModelManager

@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trading-config
+  namespace: alphabeta808-trading
+data:
+  trader_config.json: |
+    {
+      "trading": {
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT", 
+          "ADAUSDT",
+          "BNBUSDT",
+          "SOLUSDT",
+          "DOTUSDT",
+          "LINKUSDT",
+          "AVAXUSDT"
+        ],
+        "testnet": true,
+        "signal_update_interval": 60,
+        "feature_lookback_periods": 200,
+        "min_trade_amount": 10.0,
+        "max_concurrent_positions": 5
+      },
+      "risk_management": {
+        "max_position_size": 0.10,
+        "max_daily_loss": 0.02,
+        "max_total_exposure": 0.7,
+        "max_orders_per_minute": 5,
+        "stop_loss_percentage": 0.05,
+        "take_profit_percentage": 0.10,
+        "max_drawdown_threshold": 0.15,
+        "emergency_stop_loss": 0.20,
+        "cooldown_period": 300
+      },
+      "model": {
+        "ensemble_enabled": true,
+        "models": [
+          {
+            "name": "logistic_regression",
+            "path": "models_store/logistic_regression_mvp.joblib",
+            "weight": 0.3,
+            "enabled": true
+          },
+          {
+            "name": "elastic_net",
+            "path": "models_store/test_elasticnet_model.joblib",
+            "weight": 0.2,
+            "enabled": true
+          },
+          {
+            "name": "random_forest",
+            "path": "models_store/test_rf_opt_model.joblib",
+            "weight": 0.25,
+            "enabled": true
+          }
+        ],
+        "prediction_threshold": 0.7,
+        "retrain_interval": 86400,
+        "feature_lookback": 100
+      },
+      "execution": {
+        "use_simulation": false,
+        "paper_trading": true,
+        "initial_capital": 10000,
+        "order_timeout": 30
+      },
+      "features": {
+        "sma_periods": [5, 10, 20, 50],
+        "ema_periods": [5, 10, 20],
+        "rsi_period": 14,
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "bollinger_period": 20,
+        "bollinger_std": 2,
+        "volume_sma_period": 20
+      },
+      "logging": {
+        "level": "INFO",
+        "max_log_size": "10MB",
+        "backup_count": 5
+      },
+      "monitoring": {
+        "performance_report_interval": 3600,
+        "health_check_interval": 60,
+        "alerts_enabled": true
+      }
+    }

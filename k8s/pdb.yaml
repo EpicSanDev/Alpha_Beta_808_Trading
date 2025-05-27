@@ -1,0 +1,22 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trading-web-pdb
+  namespace: alphabeta808-trading
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: trading-web-interface
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trading-bot-pdb
+  namespace: alphabeta808-trading
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: trading-bot

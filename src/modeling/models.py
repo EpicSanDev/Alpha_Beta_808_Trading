@@ -45,8 +45,26 @@ import arviz as az
 
 class BidirectionalLSTMModel:
     """
-    Modèle LSTM Bidirectionnel.
-    Inspiré de la section 5.3.3 du document de référence.
+    Modèle LSTM Bidirectionnel pour les séries temporelles financières.
+
+    Ce modèle utilise des couches LSTM bidirectionnelles pour capturer les dépendances temporelles
+    dans les deux directions (passé et futur relatif à un point temporel).
+
+    Args:
+        input_shape (tuple): Forme des données d'entrée, typiquement (timesteps, num_features).
+                             Pour une utilisation avec `timesteps=1`, cela devient (1, num_features).
+        num_layers (int): Nombre de couches LSTM bidirectionnelles empilées.
+        units (int): Nombre d'unités (neurones) dans chaque couche LSTM.
+        output_units (int): Nombre d'unités dans la couche de sortie Dense. Typiquement 1 pour la classification binaire ou la régression.
+        activation (str): Fonction d'activation pour la couche de sortie (ex: 'sigmoid' pour binaire, 'linear' pour régression).
+        dropout_rate (float): Taux de dropout à appliquer après chaque couche LSTM (si variational_dropout=False).
+        variational_dropout (bool): Si True, utilise le dropout récurrent au sein des couches LSTM (recurrent_dropout).
+        l1_reg (float): Facteur de régularisation L1 pour les poids du noyau des couches LSTM et Dense.
+        l2_reg (float): Facteur de régularisation L2 pour les poids du noyau des couches LSTM et Dense.
+        use_temporal_attention (bool): Placeholder pour l'utilisation future de mécanismes d'attention temporelle.
+        use_multi_resolution (bool): Placeholder pour l'utilisation future de features multi-résolution.
+        temporal_regularization_factor (float): Placeholder pour un facteur de régularisation temporelle personnalisé.
+        **kwargs: Arguments supplémentaires passés par Keras.
     """
     def __init__(self, input_shape, num_layers=1, units=50, output_units=1, activation='sigmoid', dropout_rate=0.2, variational_dropout=False, l1_reg=0.0, l2_reg=0.0, use_temporal_attention=False, use_multi_resolution=False, temporal_regularization_factor=None, **kwargs):
         self.input_shape = input_shape
@@ -181,8 +199,28 @@ class BidirectionalLSTMModel:
 
 class TemporalCNNModel:
     """
-    Modèle CNN Temporel (par exemple, TCN).
-    Inspiré de la section 5.3.3 du document de référence.
+    Modèle CNN Temporel (similaire à un TCN simplifié) pour les séries temporelles financières.
+
+    Ce modèle utilise des couches de convolution 1D causales pour extraire des features temporelles.
+    Des techniques comme BatchNormalization, Dropout, et potentiellement des connexions résiduelles
+    peuvent être utilisées.
+
+    Args:
+        input_shape (tuple): Forme des données d'entrée, typiquement (timesteps, num_features).
+                             Pour une utilisation avec `timesteps=1`, cela devient (1, num_features).
+        num_filters (int): Nombre de filtres (neurones) dans chaque couche de convolution.
+        kernel_size (int): Taille du noyau (filtre) pour les convolutions 1D.
+        num_conv_layers (int): Nombre de couches de convolution 1D empilées.
+        output_units (int): Nombre d'unités dans la couche de sortie Dense. Typiquement 1 pour la classification binaire ou la régression.
+        activation (str): Fonction d'activation pour la couche de sortie (ex: 'sigmoid' pour binaire, 'linear' pour régression).
+        dropout_rate (float): Taux de dropout à appliquer après chaque couche de convolution.
+        l1_reg (float): Facteur de régularisation L1 pour les poids du noyau des couches Conv1D et Dense.
+        l2_reg (float): Facteur de régularisation L2 pour les poids du noyau des couches Conv1D et Dense.
+        use_residual_connections (bool): Si True, tente d'ajouter des connexions résiduelles.
+        use_squeeze_excitation (bool): Placeholder pour l'utilisation future de blocs Squeeze-and-Excitation.
+        use_hourglass_architecture (bool): Placeholder pour une architecture en sablier.
+        temporal_regularization_factor (float): Placeholder pour un facteur de régularisation temporelle personnalisé.
+        **kwargs: Arguments supplémentaires.
     """
     def __init__(self, input_shape, num_filters=64, kernel_size=3, num_conv_layers=2, output_units=1, activation='sigmoid', dropout_rate=0.2, l1_reg=0.0, l2_reg=0.0, use_residual_connections=False, use_squeeze_excitation=False, use_hourglass_architecture=False, temporal_regularization_factor=None, **kwargs):
         self.input_shape = input_shape
