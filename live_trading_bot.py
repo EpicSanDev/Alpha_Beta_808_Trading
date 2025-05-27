@@ -17,15 +17,25 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
 from continuous_trader import ContinuousTrader
 
-# Configuration du logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/trading_bot.log'),
-        logging.StreamHandler()
-    ]
-)
+# Configuration du logging avec gestion des systèmes de fichiers en lecture seule
+def setup_logging():
+    handlers = [logging.StreamHandler()]
+    
+    # Essayer d'ajouter un FileHandler si possible
+    try:
+        os.makedirs('logs', exist_ok=True)
+        handlers.append(logging.FileHandler('logs/trading_bot.log'))
+    except (OSError, PermissionError) as e:
+        print(f"Warning: Cannot create log file (read-only filesystem?): {e}")
+        print("Logging to console only")
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=handlers
+    )
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 class LiveTradingBot:
@@ -43,9 +53,6 @@ class LiveTradingBot:
         self.config_file = config_file
         self.trader: Optional[ContinuousTrader] = None
         self.is_running = False
-        
-        # Créer le dossier de logs
-        os.makedirs("logs", exist_ok=True)
         
         logger.info(f"📈 Initialisation du Live Trading Bot avec config: {config_file}")
     

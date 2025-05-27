@@ -92,26 +92,29 @@ class SecurityScanner:
 
     def setup_logging(self):
         """Setup logging for security scanner"""
-        os.makedirs('logs', exist_ok=True)
-        
         self.logger = logging.getLogger('SecurityScanner')
         self.logger.setLevel(logging.INFO)
         
-        # File handler
-        file_handler = logging.FileHandler('logs/security_scan.log')
-        file_handler.setLevel(logging.INFO)
-        
-        # Console handler  
+        # Console handler (always available)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         
         # Formatter
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
         
-        self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
+        
+        # Try to add file handler if possible
+        try:
+            os.makedirs('logs', exist_ok=True)
+            file_handler = logging.FileHandler('logs/security_scan.log')
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+        except (OSError, PermissionError) as e:
+            self.logger.warning(f"Cannot create log file (read-only filesystem?): {e}")
+            self.logger.info("Logging to console only")
 
     def add_vulnerability(self, severity: str, category: str, description: str, 
                          location: str = "", recommendation: str = "", cve: str = None):

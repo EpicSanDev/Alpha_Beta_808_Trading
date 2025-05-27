@@ -1,0 +1,19 @@
+# Test Docker Compose override to avoid port conflicts
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d
+
+services:
+  web-interface:
+    ports:
+      - "5001:5000"  # Use port 5001 instead of 5000
+
+  prometheus:
+    ports:
+      - "9091:9090"  # Use port 9091 instead of 9090
+
+  grafana:
+    ports:
+      - "3001:3000"  # Use port 3001 instead of 3000
+
+  redis:
+    ports:
+      - "6380:6379"  # Use port 6380 instead of 6379

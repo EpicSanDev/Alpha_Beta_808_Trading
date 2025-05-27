@@ -2994,4 +2994,4 @@ if __name__ == '__main__':
     web_interface.db_manager.init_database()
     
     # Démarrer l'application
-    socketio.run(app, host=host, port=port, debug=debug_mode)
+    socketio.run(app, host=host, port=port, debug=debug_mode, allow_unsafe_werkzeug=True)

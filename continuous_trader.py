@@ -37,15 +37,25 @@ from src.execution.real_time_trading import (
 )
 from src.portfolio.multi_asset import MultiAssetPortfolioManager
 
-# Configuration du logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('continuous_trader.log'),
-        logging.StreamHandler()
-    ]
-)
+# Configuration du logging avec gestion des systèmes de fichiers en lecture seule
+def setup_logging():
+    handlers = [logging.StreamHandler()]
+    
+    # Essayer d'ajouter un FileHandler si possible
+    try:
+        os.makedirs('logs', exist_ok=True)
+        handlers.append(logging.FileHandler('logs/continuous_trader.log'))
+    except (OSError, PermissionError) as e:
+        print(f"Warning: Cannot create log file (read-only filesystem?): {e}")
+        print("Logging to console only")
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=handlers
+    )
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 class ContinuousTrader:

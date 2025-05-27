@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   trading-bot:
     build:
@@ -20,7 +18,8 @@ services:
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
       - ./reports:/app/reports
-    command: ["python", "live_trading_bot.py"]
+      - ./results:/app/results
+    command: ["bot"]
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/system/status', timeout=5)"]
       interval: 30s
@@ -28,7 +27,7 @@ services:
       retries: 3
       start_period: 30s
     networks:
-      - trading-network
+      - trading_network
 
   web-interface:
     build:
@@ -54,7 +53,8 @@ services:
       - ./logs:/app/logs:ro
       - ./backtest_results:/app/backtest_results:ro
       - ./reports:/app/reports:ro
-    command: ["python", "web_interface/app_enhanced.py"]
+      - ./results:/app/results:ro
+    command: ["web"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/system/status"]
       interval: 30s
@@ -64,7 +64,7 @@ services:
     depends_on:
       - trading-bot
     networks:
-      - trading-network
+      - trading_network
 
   prometheus:
     image: prom/prometheus:latest
@@ -83,7 +83,7 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     networks:
-      - trading-network
+      - trading_network
 
   grafana:
     image: grafana/grafana:latest
@@ -102,7 +102,7 @@ services:
     depends_on:
       - prometheus
     networks:
-      - trading-network
+      - trading_network
 
   redis:
     image: redis:7-alpine
@@ -114,7 +114,7 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
     networks:
-      - trading-network
+      - trading_network
 
 volumes:
   prometheus_data:

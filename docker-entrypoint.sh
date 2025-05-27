@@ -45,11 +45,21 @@ wait_for_dependencies() {
 initialize_app() {
     log_info "Initializing AlphaBeta808 Trading Bot..."
     
-    # Create necessary directories
-    mkdir -p logs models_store backtest_results reports results optimized_models
+    # Create necessary directories if they don't exist
+    for dir in logs models_store backtest_results reports results optimized_models; do
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir" && log_info "Created directory: $dir"
+        fi
+    done
     
-    # Set proper permissions
-    chmod 755 logs models_store backtest_results reports results optimized_models
+    # Set proper permissions only if we can write to the directories
+    for dir in logs models_store backtest_results reports results optimized_models; do
+        if [ -w "$dir" ]; then
+            chmod 755 "$dir" 2>/dev/null && log_info "Set permissions for: $dir" || log_warning "Cannot change permissions for $dir (read-only mount?)"
+        else
+            log_info "Directory $dir is read-only, skipping permission change"
+        fi
+    done
     
     # Check if configuration exists
     if [ ! -f "trader_config.json" ]; then
@@ -99,22 +109,38 @@ main() {
     case "$1" in
         "web")
             log_info "Starting web interface..."
-            cd web_interface
-            exec python app_enhanced.py
+            if python -c "import flask_socketio" 2>/dev/null; then
+                cd web_interface
+                exec python app_enhanced.py
+            else
+                log_error "Flask dependencies not installed. Installing now..."
+                pip install flask flask-socketio flask-cors werkzeug eventlet
+                cd web_interface
+                exec python app_enhanced.py
+            fi
             ;;
         "bot")
             log_info "Starting trading bot..."
-            exec python continuous_trader.py
+            exec python live_trading_bot.py
             ;;
         "production")
             log_info "Starting production mode (bot + web)..."
             # Start both bot and web interface
             python continuous_trader.py &
-            cd web_interface
-            exec python app_enhanced.py
+            if python -c "import flask_socketio" 2>/dev/null; then
+                cd web_interface
+                exec python app_enhanced.py
+            else
+                log_warning "Web interface dependencies missing, running bot only..."
+                wait
+            fi
             ;;
         "backtest")
             log_info "Running backtest..."
+            exec python main.py
+            ;;
+        "comprehensive-backtest")
+            log_info "Running comprehensive backtest..."
             exec python test_comprehensive_backtest.py
             ;;
         "optimize")
@@ -131,24 +157,23 @@ main() {
             ;;
         "help")
             echo "AlphaBeta808 Trading Bot - Available commands:"
-            echo "  web        - Start web interface only"
-            echo "  bot        - Start trading bot only"
-            echo "  production - Start both bot and web interface"
-            echo "  backtest   - Run backtesting"
-            echo "  optimize   - Run model optimization"
-            echo "  test       - Run test suite"
-            echo "  bash       - Interactive bash session"
-            echo "  help       - Show this help"
+            echo "  web                   - Start web interface only"
+            echo "  bot                   - Start trading bot only"
+            echo "  production            - Start both bot and web interface"
+            echo "  backtest              - Run simple backtest (main.py)"
+            echo "  comprehensive-backtest - Run comprehensive backtest"
+            echo "  optimize              - Run model optimization"
+            echo "  test                  - Run test suite"
+            echo "  bash                  - Interactive bash session"
+            echo "  help                  - Show this help"
             ;;
         *)
             if [ -n "$1" ]; then
                 log_info "Executing custom command: $@"
                 exec "$@"
             else
-                log_info "No command specified, starting production mode..."
-                python continuous_trader.py &
-                cd web_interface
-                exec python app_enhanced.py
+                log_info "No command specified, running default backtest..."
+                exec python main.py
             fi
             ;;
     esac
