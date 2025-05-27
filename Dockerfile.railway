@@ -35,15 +35,13 @@ COPY requirements.txt .
 # Install Python dependencies optimized for Railway
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install dependencies step by step to ensure flask-socketio works
+# Install dependencies in correct order for flask-socketio
 RUN pip install --no-cache-dir \
     "eventlet>=0.33.0" \
     "bidict>=0.21.0" \
     "python-engineio>=4.7.0" \
-    "python-socketio>=5.8.0"
-
-# Install flask-socketio with specific version
-RUN pip install --no-cache-dir "flask-socketio==5.3.6"
+    "python-socketio>=5.8.0" \
+    "Flask-SocketIO==5.3.6"
 
 # Install Flask and related packages
 RUN pip install --no-cache-dir \
@@ -67,10 +65,8 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p logs models_store backtest_results reports results web_interface/static web_interface/templates
 
-# Test that flask_socketio can be imported
-RUN python -c "import flask_socketio; print('flask_socketio imported successfully')" || \
-    (echo "flask_socketio import failed, installing again..." && \
-     pip install --no-cache-dir --force-reinstall "flask-socketio>=5.3.0" "eventlet>=0.33.0")
+# Run comprehensive test of flask_socketio installation
+RUN python test_socketio.py
 
 # Health check for Railway
 HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
